@@ -79,7 +79,7 @@ The system features **content-addressable differential chunk synchronization (SH
                                  ▼                                                   ▼
                     ┌──────────────────────────┐                        ┌──────────────────────────┐
                     │    AGENT TOOL ADAPTER    │                        │  LOCAL SYNTHESIS ENGINE  │
-                    │ - Metadata Pre-filtering │                        │ - Ollama (Qwen 2.5 7B)   │
+                    │ - Metadata Pre-filtering │                        │ - Ollama (qwen3.5:0.8b)  │
                     │ - Table of Contents Map  │                        │ - Zero-Hallucination Prom│
                     │ - Sibling Context Traver.│                        │ - Real-time Token Stream │
                     └──────────────────────────┘                        └──────────────────────────┘
@@ -283,7 +283,7 @@ strata/
 
 ### Prerequisites
 
-* **Python 3.12+**
+* **Python 3.14+**
 * **Ollama** installed and running on your system ([ollama.ai](https://ollama.ai/))
 * **uv** (recommended for package management) or standard `pip`
 
@@ -310,11 +310,8 @@ pip install -e ".[dev,eval]"
 Pull the local generation model via Ollama:
 
 ```bash
-# Pull the recommended default model (4-bit quantized Qwen 2.5 7B)
-ollama pull qwen2.5:7b-instruct
-
-# For resource-constrained hardware (e.g., 8GB RAM), use Llama 3.2 3B:
-# ollama pull llama3.2:3b
+# Pull the recommended default model (4-bit quantized qwen3.5:0.8b)
+ollama pull qwen3.5:0.8b
 
 # Verify Ollama service is reachable
 curl http://localhost:11434/api/tags
@@ -406,7 +403,7 @@ expanded = tools.expand_chunk_context(chunk_id="chunk_a8f9...", window=1)
 
 ## Empirical Evaluation & RAGAS Benchmarks
 
-To eliminate subjective evaluation, Strata implements an automated evaluation harness using `ragas` configured with a local Ollama judge model (`qwen2.5:7b-instruct`).
+To eliminate subjective evaluation, Strata implements an automated evaluation harness using `ragas` configured with a local Ollama judge model (`TO BE DECIDED`).
 
 ### Benchmark Configuration
 * **Test Dataset:** 50 curated question-context-answer triples derived from technical documentation.
