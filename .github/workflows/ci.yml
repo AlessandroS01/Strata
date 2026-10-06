@@ -41,6 +41,7 @@ jobs:
 
   test:
     name: Test Suite (Python 3.14 on ${{ matrix.os }})
+    needs: lint-and-typecheck
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
