@@ -18,47 +18,44 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install uv
+      - name: Install uv and Set up Python
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: "**/uv.lock"
+          python-version: "3.14"
 
-      - name: Set up Python
-        run: uv python install 3.14
-
-      - name: Install dependencies
-        run: uv sync --extra dev
-
+      # Runs immediately in ~2s (no heavy dependency install needed)
       - name: Check code formatting (Ruff)
-        run: uv run ruff format --check src/ tests/
+        run: uvx ruff format --check src/ tests/
 
       - name: Lint code (Ruff)
-        run: uv run ruff check src/ tests/
+        run: uvx ruff check src/ tests/
+
+      # Installs project dependencies (will use cache on subsequent runs)
+      - name: Install dependencies
+        run: uv sync --extra dev
 
       - name: Strict static type checking (Mypy)
         run: uv run mypy --strict src/ tests/
 
   test:
-    name: Test Suite (Python ${{ matrix.python-version }})
+    name: Test Suite (Python 3.14 on ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.14"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install uv
+      - name: Install uv and Set up Python
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+          cache-dependency-glob: "**/uv.lock"
+          python-version: "3.14"
 
       - name: Install dependencies
         run: uv sync --extra dev
