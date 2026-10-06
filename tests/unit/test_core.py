@@ -80,7 +80,7 @@ def test_document_creation_and_immutability() -> None:
 
     # Verify immutability (frozen=True)
     with pytest.raises(ValidationError):
-        doc.title = "New Title"  # type: ignore[misc]
+        setattr(doc, "title", "New Title")  # noqa: B010
 
 
 def test_document_extra_fields_forbidden() -> None:
