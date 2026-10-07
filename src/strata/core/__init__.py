@@ -1,6 +1,14 @@
 """Strata Core: Pure domain models, settings, and abstract Protocols."""
 
 from .config import Settings, get_settings
+from .exceptions import (
+    ChunkNotFoundError,
+    DocumentNotFoundError,
+    ModelInferenceError,
+    SectionNotFoundError,
+    StrataError,
+    SyncConflictError,
+)
 from .models import (
     AskResult,
     BenchmarkSample,
@@ -35,9 +43,11 @@ __all__ = [
     "BenchmarkScorecard",
     "Chunk",
     "ChunkDiff",
+    "ChunkNotFoundError",
     "Chunker",
     "Citation",
     "Document",
+    "DocumentNotFoundError",
     "DocumentOutline",
     "DocumentOutlineItem",
     "DocumentStore",
@@ -45,13 +55,17 @@ __all__ = [
     "ExpandedContext",
     "HybridSearcher",
     "LLMGenerator",
+    "ModelInferenceError",
     "Reranker",
     "RetrievedChunk",
     "RetrievedContext",
     "SearchResult",
     "Section",
+    "SectionNotFoundError",
     "Settings",
     "SparseIndex",
+    "StrataError",
+    "SyncConflictError",
     "SyncStats",
     "VectorStore",
     "get_settings",
