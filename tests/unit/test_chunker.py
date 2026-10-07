@@ -487,3 +487,105 @@ def test_get_token_encoder_cached() -> None:
     enc1 = get_token_encoder()
     enc2 = get_token_encoder()
     assert enc1 is enc2
+
+
+# ==============================================================================
+# 6. Branch Coverage: Fallbacks and Boundary Conditions
+# ==============================================================================
+
+
+def test_chunk_document_skips_empty_section_content() -> None:
+    """Verify sections with empty or whitespace-only content are skipped during chunking (line 218)."""
+    content = """# Heading 1 Without Body
+## Heading 2 Without Body
+### Heading 3 With Body
+This section actually contains valid content with enough tokens to meet min_chunk_size.
+"""
+    doc = make_document(raw_content=content)
+    chunker = MarkdownChunker(min_chunk_size=10)
+
+    sections = chunker.extract_sections(doc)
+    assert len(sections) == 3
+    assert sections[0].content == ""
+    assert sections[1].content == ""
+    assert len(sections[2].content) > 0
+
+    chunks = chunker.chunk_document(doc)
+    # The two empty sections should be skipped via line 218
+    assert len(chunks) == 1
+    assert (
+        chunks[0].heading_path
+        == "Heading 1 Without Body > Heading 2 Without Body > Heading 3 With Body"
+    )
+    assert chunks[0].parent_section_id == sections[2].id
+
+
+def test_chunk_document_oversized_trailing_slice_shifted_backward() -> None:
+    """Verify trailing slice below min_chunk_size shifts start backward (lines 276-298)."""
+    enc = get_token_encoder()
+    # Decode 55 distinct token IDs to ensure total tokens is ~55-56
+    text = enc.decode(list(range(1000, 1055)))
+
+    # Configure chunk_size=50, chunk_overlap=10 (stride=40), min_chunk_size=25
+    # First chunk: tokens 0 to 50 (50 tokens)
+    # Stride advances to 40. Remaining tokens: 40 to ~55 (15 tokens < min_chunk_size 25)
+    # Triggers adjusted_start = max(0, total_tokens - 50) and lines 276-298
+    content = f"# Section Header\n{text}"
+    doc = make_document(raw_content=content)
+    chunker = MarkdownChunker(
+        chunk_size=50,
+        chunk_overlap=10,
+        min_chunk_size=25,
+    )
+
+    chunks = chunker.chunk_document(doc)
+    assert len(chunks) == 2
+    assert chunks[0].index == 0
+    assert chunks[1].index == 1
+    assert chunks[0].text != chunks[1].text
+    assert chunks[1].token_count >= 25
+
+
+def test_count_tokens_fallback_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify count_tokens fallback to whitespace approximation when encoder fails (lines 40-43)."""
+
+    def failing_encoder() -> None:
+        raise RuntimeError("Simulated tokenizer initialization failure")
+
+    monkeypatch.setattr("strata.ingestion.chunker.get_token_encoder", failing_encoder)
+
+    # Multi-word string fallback: max(1, int(len(words) * 1.3))
+    text_multi = "alpha beta gamma delta epsilon"  # 5 words -> int(5 * 1.3) = 6
+    assert count_tokens(text_multi) == 6
+
+    # Single word string fallback: max(1, int(1 * 1.3)) = 1
+    assert count_tokens("word") == 1
+
+    # Whitespace-only string fallback (falsy words list): returns 0
+    assert count_tokens("   \n\t   ") == 0
+
+
+def test_encode_text_fallback_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify MarkdownChunker._encode_text fallback when encoder fails (lines 331-333)."""
+
+    def failing_encoder() -> None:
+        raise RuntimeError("Simulated tokenizer encoding failure")
+
+    monkeypatch.setattr("strata.ingestion.chunker.get_token_encoder", failing_encoder)
+
+    chunker = MarkdownChunker()
+    tokens = chunker._encode_text("first second third")
+    assert tokens == [0, 1, 2]
+
+
+def test_decode_tokens_fallback_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify MarkdownChunker._decode_tokens fallback when encoder fails (lines 340-341)."""
+
+    def failing_encoder() -> None:
+        raise RuntimeError("Simulated tokenizer decoding failure")
+
+    monkeypatch.setattr("strata.ingestion.chunker.get_token_encoder", failing_encoder)
+
+    chunker = MarkdownChunker()
+    decoded = chunker._decode_tokens([10, 20, 30])
+    assert decoded == "10 20 30"

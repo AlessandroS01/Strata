@@ -18,7 +18,6 @@ import tiktoken
 from strata.core.config import Settings, get_settings
 from strata.core.models import Chunk, Document, Section
 
-
 # Detects the start and end of code blocks in Markdown (e.g. # This is a comment).
 _FENCE_PATTERN = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 # Detects Markdown headings (e.g., # Heading, ## Subheading).
