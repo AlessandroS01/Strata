@@ -108,3 +108,8 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "tiktoken>=0.14.0",
+]

@@ -3246,6 +3246,11 @@ eval = [
     { name = "ragas" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "tiktoken" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "datasets", marker = "extra == 'eval'", specifier = ">=2.19.0" },
@@ -3270,6 +3275,9 @@ requires-dist = [
     { name = "typer", extras = ["all"], specifier = ">=0.12.0" },
 ]
 provides-extras = ["dev", "eval"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "tiktoken", specifier = ">=0.14.0" }]
 
 [[package]]
 name = "sympy"
