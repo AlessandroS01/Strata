@@ -39,7 +39,7 @@ from strata.core.protocols import (
 def test_settings_defaults() -> None:
     """Verify default configuration values."""
     settings = get_settings()
-    assert settings.collection_name == "strata_chunks"
+    assert settings.qdrant_collection_name == "strata_chunks"
     assert settings.embedding_model == "BAAI/bge-small-en-v1.5"
     assert settings.embedding_dimension == 384
     assert settings.reranker_model == "BAAI/bge-reranker-base"

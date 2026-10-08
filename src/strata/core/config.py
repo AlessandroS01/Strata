@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Dense Vector Index & Embeddings
     # -------------------------------------------------------------------------
-    collection_name: str = Field(
+    qdrant_collection_name: str = Field(
         default="strata_chunks",
         description="Name of the Qdrant vector collection.",
     )

@@ -5,5 +5,6 @@ Transforms canonical chunks into dense and sparse search representations:
 """
 
 from .embedder import FastEmbedder
+from .qdrant_store import QdrantVectorStore
 
-__all__ = ["FastEmbedder"]
+__all__ = ["FastEmbedder", "QdrantVectorStore"]
