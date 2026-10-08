@@ -4,7 +4,6 @@ Parses local Markdown files into canonical Document domain models with
 YAML frontmatter extraction, deterministic SHA-256 hashing, and title fallback cascades.
 """
 
-import hashlib
 import json
 import logging
 import os
@@ -16,6 +15,7 @@ import yaml
 
 from strata.core.models import Document
 from strata.core.protocols import DocumentReader
+from strata.indexing.hasher import compute_document_hash
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +199,7 @@ class LocalFileReader(DocumentReader):
             raise IsADirectoryError(f"Expected a file, got directory: {file_path}")
 
         raw_bytes = path.read_bytes()
-        doc_hash = hashlib.sha256(raw_bytes).hexdigest()
+        doc_hash = compute_document_hash(raw_bytes)
 
         content = raw_bytes.decode("utf-8")
 

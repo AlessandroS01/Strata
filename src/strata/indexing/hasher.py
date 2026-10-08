@@ -12,6 +12,7 @@ def compute_chunk_hash(heading_path: str, chunk_text: str) -> str:
     return hashlib.sha256(f"{heading_path}:{chunk_text}".encode()).hexdigest()
 
 
-def compute_document_hash(raw_content: str) -> str:
-    """Compute deterministic SHA-256 hash over raw document content."""
-    return hashlib.sha256(raw_content.encode()).hexdigest()
+def compute_document_hash(raw_content: str | bytes) -> str:
+    """Compute deterministic SHA-256 hash over raw document content or bytes."""
+    data = raw_content if isinstance(raw_content, bytes) else raw_content.encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
