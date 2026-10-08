@@ -15,6 +15,7 @@ from pathlib import Path
 import yaml
 
 from strata.core.models import Document
+from strata.core.protocols import DocumentReader
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,7 @@ def _extract_metadata(frontmatter: dict[str, object]) -> dict[str, str]:
     return metadata
 
 
-class LocalFileReader:
+class LocalFileReader(DocumentReader):
     """Scanner and parser for local Markdown documents into canonical Document models.
 
     Implements the DocumentReader protocol.

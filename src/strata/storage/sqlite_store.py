@@ -20,11 +20,12 @@ from strata.core.models import (
     DocumentOutlineItem,
     Section,
 )
+from strata.core.protocols import DocumentStore
 
 logger = logging.getLogger(__name__)
 
 
-class SQLiteStore:
+class SQLiteStore(DocumentStore):
     """Canonical document and chunk storage engine backed by local SQLite.
 
     Fulfills the DocumentStore protocol with ACID transactional integrity,

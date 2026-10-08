@@ -16,6 +16,7 @@ import tiktoken
 
 from strata.core.config import Settings, get_settings
 from strata.core.models import Chunk, Document, Section
+from strata.core.protocols import Chunker
 from strata.indexing.hasher import compute_chunk_hash
 
 # Detects the start and end of code blocks in Markdown (e.g. # This is a comment).
@@ -43,7 +44,7 @@ def count_tokens(text: str) -> int:
         return max(1, int(len(words) * 1.3)) if words else 0
 
 
-class MarkdownChunker:
+class MarkdownChunker(Chunker):
     """Hierarchical Small-to-Big Markdown and text splitter.
 
     Satisfies the Chunker protocol defined in strata.core.protocols.
