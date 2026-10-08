@@ -42,40 +42,7 @@ Strata is a 100% offline, air-gapped personal knowledge base and hybrid RAG engi
 
 ---
 
-## 3. Directory Layout & Module Boundaries
-
-Maintain strict layer separation when editing or introducing files:
-
-```text
-src/strata/
-├── core/             # Pure models, settings, and abstract Protocols (NO DB or IO imports)
-│   ├── config.py     # Pydantic Settings (paths, models, hyperparameters)
-│   ├── models.py     # Pydantic domain models (Document, Chunk, SearchResult)
-│   └── protocols.py  # typing.Protocol interfaces (DocumentStore, VectorStore, etc.)
-├── storage/          # Concrete storage adapters
-│   ├── sqlite_store.py  # SQLite ACID operations and metadata queries
-│   └── qdrant_store.py  # Embedded Qdrant CRUD, points, and payload filters
-├── indexing/         # Chunking, hashing, and sync engine
-│   ├── chunker.py    # Hierarchical Markdown splitter (Small-to-Big)
-│   ├── hasher.py     # SHA-256 chunk hashing and diff computation
-│   └── sync_worker.py# Reconciles SQLite against Qdrant/BM25
-├── retrieval/        # Pure retrieval pipeline (Zero LLM)
-│   ├── embedder.py   # Local embedding generator (dense)
-│   ├── sparse_bm25.py# BM25 lexical inverted index
-│   ├── fusion.py     # Reciprocal Rank Fusion (RRF) algorithm
-│   └── reranker.py   # Cross-encoder scoring (bge-reranker-base)
-├── llm/              # Generation layer (Isolated consumer)
-│   ├── client.py     # Ollama client with streaming token yielders
-│   └── prompts.py    # Strict grounding prompt templates & citation formatters
-├── agents/           # Agent tool primitives
-│   └── tools.py      # Typed tool interfaces (filter, outline, expand)
-└── cli/              # Terminal entrypoints
-    └── main.py       # Typer CLI application
-```
-
----
-
-## 4. Coding Conventions & Standards
+## 3. Coding Conventions & Standards
 
 ### Type Annotations & Static Analysis
 * 100% type annotations on all function signatures and class definitions.
@@ -107,7 +74,7 @@ class VectorStore(Protocol):
 
 ---
 
-## 5. Development Workflows & Essential Commands
+## 4. Development Workflows & Essential Commands
 
 When running tasks or validating code changes, use `uv run`:
 
@@ -150,7 +117,7 @@ uv run strata benchmark --dataset tests/eval/golden_dataset.json
 
 ---
 
-## 6. Prohibited Anti-Patterns
+## 5. Prohibited Anti-Patterns
 
 When modifying or generating code:
 * ❌ **DO NOT** import cloud LLM SDKs (`openai`, `anthropic`, `cohere`) or make external network calls.

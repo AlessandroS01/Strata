@@ -13,9 +13,9 @@ from pathlib import Path
 
 import yaml
 
+from strata.core.hasher import compute_document_hash
 from strata.core.models import Document
 from strata.core.protocols import DocumentReader
-from strata.indexing.hasher import compute_document_hash
 
 logger = logging.getLogger(__name__)
 

@@ -18,14 +18,10 @@ import re
 import pytest
 
 from strata.core.config import Settings
+from strata.core.hasher import compute_chunk_hash, compute_document_hash
 from strata.core.models import Document
 from strata.core.protocols import Chunker
-from strata.indexing.chunker import (
-    MarkdownChunker,
-    count_tokens,
-    get_token_encoder,
-)
-from strata.indexing.hasher import compute_chunk_hash, compute_document_hash
+from strata.ingestion.chunker import MarkdownChunker, count_tokens, get_token_encoder
 
 
 def make_document(
@@ -559,7 +555,7 @@ def test_count_tokens_fallback_on_exception(monkeypatch: pytest.MonkeyPatch) -> 
     def failing_encoder() -> None:
         raise RuntimeError("Simulated tokenizer initialization failure")
 
-    monkeypatch.setattr("strata.indexing.chunker.get_token_encoder", failing_encoder)
+    monkeypatch.setattr("strata.ingestion.chunker.get_token_encoder", failing_encoder)
 
     # Multi-word string fallback: max(1, int(len(words) * 1.3))
     text_multi = "alpha beta gamma delta epsilon"  # 5 words -> int(5 * 1.3) = 6
@@ -578,7 +574,7 @@ def test_encode_text_fallback_on_exception(monkeypatch: pytest.MonkeyPatch) -> N
     def failing_encoder() -> None:
         raise RuntimeError("Simulated tokenizer encoding failure")
 
-    monkeypatch.setattr("strata.indexing.chunker.get_token_encoder", failing_encoder)
+    monkeypatch.setattr("strata.ingestion.chunker.get_token_encoder", failing_encoder)
 
     chunker = MarkdownChunker()
     tokens = chunker._encode_text("first second third")
@@ -591,7 +587,7 @@ def test_decode_tokens_fallback_on_exception(monkeypatch: pytest.MonkeyPatch) ->
     def failing_encoder() -> None:
         raise RuntimeError("Simulated tokenizer decoding failure")
 
-    monkeypatch.setattr("strata.indexing.chunker.get_token_encoder", failing_encoder)
+    monkeypatch.setattr("strata.ingestion.chunker.get_token_encoder", failing_encoder)
 
     chunker = MarkdownChunker()
     decoded = chunker._decode_tokens([10, 20, 30])

@@ -15,9 +15,9 @@ from functools import lru_cache
 import tiktoken
 
 from strata.core.config import Settings, get_settings
+from strata.core.hasher import compute_chunk_hash
 from strata.core.models import Chunk, Document, Section
 from strata.core.protocols import Chunker
-from strata.indexing.hasher import compute_chunk_hash
 
 # Detects the start and end of code blocks in Markdown (e.g. # This is a comment).
 _FENCE_PATTERN = re.compile(r"^\s{0,3}(`{3,}|~{3,})")

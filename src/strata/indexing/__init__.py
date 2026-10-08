@@ -1,19 +1,9 @@
-"""Document indexing, chunking, and hashing pipeline for Strata."""
+"""Derived search representations and synchronization subsystem.
 
-from .chunker import (
-    MarkdownChunker,
-    count_tokens,
-    get_token_encoder,
-)
-from .hasher import (
-    compute_chunk_hash,
-    compute_document_hash,
-)
+Transforms canonical chunks into dense and sparse search representations:
+- embedder: Local dense vector generation using ONNX (FastEmbed) or PyTorch (Sentence-Transformers).
+"""
 
-__all__ = [
-    "MarkdownChunker",
-    "compute_chunk_hash",
-    "compute_document_hash",
-    "count_tokens",
-    "get_token_encoder",
-]
+from .embedder import FastEmbedder
+
+__all__ = ["FastEmbedder"]

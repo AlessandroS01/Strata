@@ -252,7 +252,7 @@ strata/
 │   │   ├── hasher.py           # SHA-256 content-addressable chunk hashing engine
 │   │   └── sync_worker.py      # Differential sync and invalidation coordinator
 │   ├── retrieval/
-│   │   ├── embedder.py         # Local FastEmbed / Sentence-Transformers client
+│   │   ├── embedder.py         # Local FastEmbed
 │   │   ├── sparse_bm25.py      # Lexical BM25 index implementation
 │   │   ├── fusion.py           # Reciprocal Rank Fusion (RRF) implementation
 │   │   └── reranker.py         # Cross-encoder re-ranking pipeline

@@ -1,6 +1,11 @@
-"""Strata: Air-gapped personal knowledge engine and local hybrid RAG."""
+"""Strata: Offline-first, air-gapped personal knowledge engine.
 
-from . import core, ingestion
+Architected with domain-driven design, immutable data contracts,
+and zero-daemon local storage.
+"""
 
-__all__ = ["core", "ingestion"]
+from . import core, indexing, ingestion
+
 __version__ = "0.1.0"
+
+__all__ = ["__version__", "core", "indexing", "ingestion"]
