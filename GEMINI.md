@@ -31,11 +31,11 @@ Strata is a 100% offline, air-gapped personal knowledge base and hybrid RAG engi
 
 * **Language:** Python 3.12+ (strictly typed)
 * **Package & Env Manager:** `uv`
-* **Canonical DB:** SQLite via `sqlite3` or `SQLModel` / `SQLAlchemy` (sync/async compliant)
+* **Canonical DB:** SQLite via `sqlite3`
 * **Vector Store:** `qdrant-client` in embedded local mode (`QdrantClient(path="./data/qdrant")`)
 * **Sparse Index:** `rank-bm25`
 * **Local Embeddings & Reranking:** `fastembed` / `sentence-transformers` (`BAAI/bge-small-en-v1.5`, `BAAI/bge-reranker-base`)
-* **Local LLM Engine:** Ollama (`qwen2.5:7b-instruct` or `llama3.2:3b`) via `ollama-python` or OpenAI-compatible client
+* **Local LLM Engine:** Ollama (`qwen3.5:0.8b`) via `ollama-python` or OpenAI-compatible client
 * **Evaluation:** `ragas` with local Ollama judge
 * **CLI:** `typer[all]` with `rich` formatting
 * **Code Quality:** `ruff` (linter/formatter), `mypy` (strict mode), `pytest`

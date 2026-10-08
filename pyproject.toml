@@ -21,24 +21,21 @@ dependencies = [
     "rich>=13.7.0",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.2.0",
-
     # Canonical Storage
     "sqlmodel>=0.0.18",
     "sqlalchemy>=2.0.0",
-
     # Derived Vector Index
     "qdrant-client>=1.9.0",
-
     # Sparse & Hybrid Retrieval
     "rank-bm25>=0.2.2",
-
     # Local Embeddings & Re-ranking (fast, local ONNX/PyTorch runtimes)
     "fastembed>=0.3.0",
     "sentence-transformers>=3.0.0",
-
     # Local LLM Client
     "ollama>=0.2.0",
     "httpx>=0.27.0",
+    "pyyaml>=6.0",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [project.optional-dependencies]

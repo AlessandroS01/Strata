@@ -28,6 +28,7 @@ from .models import (
 )
 from .protocols import (
     Chunker,
+    DocumentReader,
     DocumentStore,
     Embedder,
     HybridSearcher,
@@ -50,6 +51,7 @@ __all__ = [
     "DocumentNotFoundError",
     "DocumentOutline",
     "DocumentOutlineItem",
+    "DocumentReader",
     "DocumentStore",
     "Embedder",
     "ExpandedContext",

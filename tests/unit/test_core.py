@@ -25,6 +25,7 @@ from strata.core.models import (
 )
 from strata.core.protocols import (
     Chunker,
+    DocumentReader,
     DocumentStore,
     Embedder,
     HybridSearcher,
@@ -464,6 +465,22 @@ def test_runtime_protocol_checks() -> None:
             return SearchResult(query=query, chunks=[])
 
     assert isinstance(DummyHybridSearcher(), HybridSearcher)
+
+    class DummyDocumentReader:
+        def read_file(self, file_path: Path | str) -> Document:
+            return Document(
+                title="test",
+                file_path=str(file_path),
+                raw_content="",
+                doc_hash="hash",
+            )
+
+        def scan_directory(
+            self, directory_path: Path | str, recursive: bool = True
+        ) -> list[Document]:
+            return []
+
+    assert isinstance(DummyDocumentReader(), DocumentReader)
 
     # Incomplete class must fail isinstance
     class IncompleteStore:

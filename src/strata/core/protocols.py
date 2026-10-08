@@ -5,6 +5,7 @@ chunking, and generation layers without concrete class inheritance.
 """
 
 from collections.abc import Iterator, Mapping
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from strata.core.models import (
@@ -220,4 +221,17 @@ class HybridSearcher(Protocol):
         payload_filter: Mapping[str, object] | None = None,
     ) -> SearchResult:
         """Execute decoupled hybrid search pipeline in sub-200ms without LLM."""
+        ...
+
+
+@runtime_checkable
+class DocumentReader(Protocol):
+    """Local document reader and directory scanner interface."""
+
+    def read_file(self, file_path: Path | str) -> Document:
+        """Parse a single file into a canonical Document model."""
+        ...
+
+    def scan_directory(self, directory_path: Path | str, recursive: bool = True) -> list[Document]:
+        """Discover and parse markdown documents in a directory."""
         ...
