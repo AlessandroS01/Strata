@@ -41,6 +41,10 @@ class Settings(BaseSettings):
         default=Path("./data/qdrant"),
         description="Filesystem directory for embedded Qdrant vector index.",
     )
+    bm25_index_path: Path | None = Field(
+        default=Path("./data/bm25.json"),
+        description="Filesystem path for persisted BM25 sparse index.",
+    )
 
     # -------------------------------------------------------------------------
     # Dense Vector Index & Embeddings

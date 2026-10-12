@@ -104,6 +104,13 @@ class FastEmbedder(Embedder):
         except Exception as exc:
             raise ModelInferenceError(f"Failed to compute text embeddings: {exc}") from exc
 
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Compute dense vector embeddings for a batch of text passages.
+
+        Alias for embed_texts to support batch sync operations.
+        """
+        return self.embed_texts(texts)
+
     def embed_query(self, query: str) -> list[float]:
         """Compute normalized dense embedding for a single query.
 

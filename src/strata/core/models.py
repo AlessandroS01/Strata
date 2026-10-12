@@ -264,6 +264,10 @@ class SyncStats(BaseModel):
     )
 
 
+# Alias for compatibility with differential sync engine
+SyncReport = SyncStats
+
+
 # ==============================================================================
 # 3. DECOUPLED RETRIEVAL & RE-RANKING PIPELINE (Zero LLM)
 #    Outputs produced by dense search, BM25, RRF fusion, and cross-encoders.

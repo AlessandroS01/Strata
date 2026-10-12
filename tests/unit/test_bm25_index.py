@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from strata.core.config import Settings
+from strata.core.config import Settings, get_settings
 from strata.core.models import Chunk, RetrievedChunk
 from strata.core.protocols import SparseIndex
 from strata.indexing.bm25_index import BM25Index
@@ -353,6 +353,46 @@ class TestBM25Serialization:
         with pytest.raises(FileNotFoundError):
             BM25Index.load(tmp_path / "nonexistent.json")
 
+    def test_save_and_load_default_settings_path(
+        self, tmp_path: Path, test_chunks: list[Chunk]
+    ) -> None:
+        """Verify save and load use settings.bm25_index_path by default when no path is passed."""
+        default_path = tmp_path / "default_bm25.json"
+        settings = Settings(bm25_index_path=default_path)
+        index = BM25Index(chunks=test_chunks, settings=settings)
+
+        # Save without providing file_path
+        saved_path = index.save()
+        assert saved_path == default_path
+        assert default_path.exists()
+
+        # Load classmethod without providing file_path
+        loaded_index = BM25Index.load(settings=settings)
+        assert loaded_index.count == index.count
+        res = loaded_index.search("offline", limit=5)
+        assert len(res) == 1
+        assert res[0].chunk.id == "c-doc1"
+
+        # Load from path on instance without providing file_path
+        fresh_index = BM25Index(settings=settings)
+        loaded_fresh_path = fresh_index.load_from_path()
+        assert loaded_fresh_path == default_path
+        assert fresh_index.count == index.count
+
+    def test_save_and_load_missing_path_raises_value_error(self, test_chunks: list[Chunk]) -> None:
+        """Verify ValueError is raised if no path is provided and bm25_index_path is None."""
+        settings = Settings(bm25_index_path=None)
+        index = BM25Index(chunks=test_chunks, settings=settings)
+
+        with pytest.raises(ValueError, match=r"settings\.bm25_index_path is not configured"):
+            index.save()
+
+        with pytest.raises(ValueError, match=r"settings\.bm25_index_path is not configured"):
+            index.load_from_path()
+
+        with pytest.raises(ValueError, match=r"settings\.bm25_index_path is not configured"):
+            BM25Index.load(settings=settings)
+
 
 class TestBM25EdgeCases:
     """Validate boundary conditions and edge cases."""
@@ -447,3 +487,30 @@ class TestBM25EdgeCases:
         assert index.k1 == 2.0
         assert index.b == 0.5
         assert index.epsilon == 0.1
+
+    def test_batch_size_configuration_and_defaults(self, tmp_path: Path) -> None:
+        """Verify batch_size defaults to settings.embedding_batch_size and can be overridden."""
+        default_index = BM25Index()
+        assert default_index.batch_size == get_settings().embedding_batch_size
+
+        custom_settings = Settings(embedding_batch_size=8)
+        settings_index = BM25Index(settings=custom_settings)
+        assert settings_index.batch_size == 8
+
+        explicit_index = BM25Index(batch_size=16)
+        assert explicit_index.batch_size == 16
+
+        # Test index_chunks with explicit batch_size
+        c1 = make_chunk(chunk_id="c-b1", text="Batch indexing alpha")
+        c2 = make_chunk(chunk_id="c-b2", text="Batch indexing beta")
+        c3 = make_chunk(chunk_id="c-b3", text="Batch indexing gamma")
+        explicit_index.index_chunks([c1, c2, c3], batch_size=2)
+        assert explicit_index.count == 3
+        assert len(explicit_index.search("alpha", limit=5)) == 1
+
+        # Test load with batch_size override
+        save_path = tmp_path / "bm25_batch.json"
+        explicit_index.save(save_path)
+        loaded = BM25Index.load(save_path, batch_size=4)
+        assert loaded.batch_size == 4
+        assert loaded.count == 3

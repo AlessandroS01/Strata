@@ -43,6 +43,7 @@ class BM25Index(SparseIndex):
         b: float | None = None,
         epsilon: float = 0.25,
         token_pattern: str = DEFAULT_TOKEN_PATTERN,
+        batch_size: int | None = None,
     ) -> None:
         """Initialize BM25Index.
 
@@ -53,6 +54,8 @@ class BM25Index(SparseIndex):
             b: BM25 document length normalization parameter override.
             epsilon: Floor multiplier for negative IDF terms in BM25Okapi.
             token_pattern: Regular expression pattern for text tokenization.
+            batch_size: Optional chunk batch size. Defaults to
+                settings.embedding_batch_size.
         """
         self.settings: Settings = settings or get_settings()
         self.k1: float = k1 if k1 is not None else self.settings.bm25_k1
@@ -60,6 +63,9 @@ class BM25Index(SparseIndex):
         self.epsilon: float = epsilon
         self.token_pattern: str = token_pattern
         self._token_pattern: re.Pattern[str] = re.compile(token_pattern)
+        self.batch_size: int = (
+            batch_size if batch_size is not None else self.settings.embedding_batch_size
+        )
 
         # Internal corpus and mappings
         self._chunks: dict[str, Chunk] = {}
@@ -149,18 +155,26 @@ class BM25Index(SparseIndex):
         else:
             self._bm25 = None
 
-    def index_chunks(self, chunks: list[Chunk]) -> None:
+    def index_chunks(self, chunks: list[Chunk], batch_size: int | None = None) -> None:
         """Build or update BM25 index with chunks.
 
         Maintains tokenized texts and two-way mappings between integer positions
         and chunk identifiers.
+
+        Args:
+            chunks: List of Chunk objects to index.
+            batch_size: Optional batch size override. Defaults to self.batch_size
+                (settings.embedding_batch_size).
         """
         if not chunks:
             return
 
-        for chunk in chunks:
-            self._chunks[chunk.id] = chunk
-            self._tokenized_cache[chunk.id] = self.tokenize(chunk.text)
+        effective_batch_size = max(1, batch_size if batch_size is not None else self.batch_size)
+        for i in range(0, len(chunks), effective_batch_size):
+            batch = chunks[i : i + effective_batch_size]
+            for chunk in batch:
+                self._chunks[chunk.id] = chunk
+                self._tokenized_cache[chunk.id] = self.tokenize(chunk.text)
 
         self._rebuild_index()
         logger.debug("Indexed %d chunks (total active: %d)", len(chunks), len(self._chunks))
@@ -279,13 +293,25 @@ class BM25Index(SparseIndex):
 
         return results
 
-    def save(self, file_path: Path | str) -> None:
+    def save(self, file_path: Path | str | None = None) -> Path:
         """Save BM25 index state to a file.
 
         Args:
-            file_path: Destination path (.json or .pkl).
+            file_path: Optional destination path (.json or .pkl). Defaults to
+                self.settings.bm25_index_path if not provided.
+
+        Returns:
+            The Path where the index was saved.
+
+        Raises:
+            ValueError: If file_path is None and settings.bm25_index_path is not configured.
         """
-        path = Path(file_path)
+        target = file_path if file_path is not None else self.settings.bm25_index_path
+        if target is None:
+            raise ValueError(
+                "No file path provided and settings.bm25_index_path is not configured."
+            )
+        path = Path(target)
         path.parent.mkdir(parents=True, exist_ok=True)
 
         data: dict[str, Any] = {
@@ -305,14 +331,28 @@ class BM25Index(SparseIndex):
                 json.dump(data, f, indent=2, ensure_ascii=False)
 
         logger.debug("Saved BM25 index with %d chunks to %s", len(self._chunks), path)
+        return path
 
-    def load_from_path(self, file_path: Path | str) -> None:
+    def load_from_path(self, file_path: Path | str | None = None) -> Path:
         """Load BM25 index state from a file into this instance.
 
         Args:
-            file_path: Source path to load from.
+            file_path: Optional source path to load from. Defaults to
+                self.settings.bm25_index_path if not provided.
+
+        Returns:
+            The Path from where the index was loaded.
+
+        Raises:
+            ValueError: If file_path is None and settings.bm25_index_path is not configured.
+            FileNotFoundError: If the index file does not exist.
         """
-        path = Path(file_path)
+        target = file_path if file_path is not None else self.settings.bm25_index_path
+        if target is None:
+            raise ValueError(
+                "No file path provided and settings.bm25_index_path is not configured."
+            )
+        path = Path(target)
         if not path.exists():
             raise FileNotFoundError(f"Index file not found: {path}")
 
@@ -340,23 +380,47 @@ class BM25Index(SparseIndex):
         chunks = [Chunk.model_validate(c) for c in raw_chunks]
         self.index_chunks(chunks)
         logger.debug("Loaded BM25 index with %d chunks from %s", len(self._chunks), path)
+        return path
 
     @classmethod
-    def load(cls, file_path: Path | str, settings: Settings | None = None) -> BM25Index:
+    def load(
+        cls,
+        file_path: Path | str | None = None,
+        settings: Settings | None = None,
+        batch_size: int | None = None,
+    ) -> BM25Index:
         """Load and return a new BM25Index instance from a saved file.
 
         Args:
-            file_path: File path to load from.
+            file_path: Optional file path to load from. Defaults to
+                settings.bm25_index_path.
             settings: Optional Settings instance.
+            batch_size: Optional chunk batch size override. Defaults to
+                settings.embedding_batch_size.
 
         Returns:
             Reconstructed BM25Index instance.
+
+        Raises:
+            ValueError: If file_path is None and settings.bm25_index_path is not configured.
+            FileNotFoundError: If the index file does not exist.
         """
-        index = cls(settings=settings)
-        index.load_from_path(file_path)
+        resolved_settings = settings or get_settings()
+        target = file_path if file_path is not None else resolved_settings.bm25_index_path
+        if target is None:
+            raise ValueError(
+                "No file path provided and settings.bm25_index_path is not configured."
+            )
+        index = cls(settings=resolved_settings, batch_size=batch_size)
+        index.load_from_path(target)
         return index
 
     @classmethod
-    def from_file(cls, file_path: Path | str, settings: Settings | None = None) -> BM25Index:
+    def from_file(
+        cls,
+        file_path: Path | str | None = None,
+        settings: Settings | None = None,
+        batch_size: int | None = None,
+    ) -> BM25Index:
         """Alias for load."""
-        return cls.load(file_path, settings=settings)
+        return cls.load(file_path=file_path, settings=settings, batch_size=batch_size)

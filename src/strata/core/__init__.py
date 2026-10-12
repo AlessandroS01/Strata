@@ -33,6 +33,7 @@ from .models import (
     RetrievedContext,
     SearchResult,
     Section,
+    SyncReport,
     SyncStats,
 )
 from .protocols import (
@@ -77,6 +78,7 @@ __all__ = [
     "SparseIndex",
     "StrataError",
     "SyncConflictError",
+    "SyncReport",
     "SyncStats",
     "VectorStore",
     "compute_chunk_hash",
