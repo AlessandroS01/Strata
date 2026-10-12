@@ -4,8 +4,8 @@ Architected with domain-driven design, immutable data contracts,
 and zero-daemon local storage.
 """
 
-from . import core, indexing, ingestion
+from . import core, indexing, ingestion, retrieval
 
 __version__ = "0.1.0"
 
-__all__ = ["__version__", "core", "indexing", "ingestion"]
+__all__ = ["__version__", "core", "indexing", "ingestion", "retrieval"]
