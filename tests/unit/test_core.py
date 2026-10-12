@@ -48,7 +48,7 @@ def test_settings_defaults() -> None:
     assert settings.sparse_top_k == 30
     assert settings.fused_top_k == 30
     assert settings.rrf_k == 60
-    assert settings.final_top_k == 3
+    assert settings.final_top_k == 5
     assert settings.data_dir == Path("./data")
     assert settings.db_path == Path("./data/canonical.db")
     assert settings.qdrant_path == Path("./data/qdrant")

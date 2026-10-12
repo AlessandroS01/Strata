@@ -57,7 +57,7 @@ DATA FLOW LIFECYCLE:
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ==============================================================================
 # 1. CANONICAL STORAGE & HIERARCHICAL INGESTION (SQLite Source of Truth)
@@ -318,10 +318,24 @@ class RetrievedChunk(BaseModel):
         default=None,
         description="Hydrated parent section text from SQLite for Small-to-Big synthesis.",
     )
+    parent_section: Section | None = Field(
+        default=None,
+        description="Hydrated parent Section domain model for Small-to-Big context expansion.",
+    )
     document_title: str | None = Field(
         default=None,
         description="Parent document title for human display and citations.",
     )
+
+    @property
+    def id(self) -> str:
+        """Return unique UUID of underlying chunk."""
+        return self.chunk.id
+
+    @property
+    def text(self) -> str:
+        """Return text content of underlying chunk."""
+        return self.chunk.text
 
 
 # Alias for compatibility with protocol definitions
@@ -337,6 +351,7 @@ class SearchResult(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     query: str = Field(
+        default="",
         description="Original query string.",
     )
     chunks: list[RetrievedChunk] = Field(
@@ -378,6 +393,39 @@ class SearchResult(BaseModel):
         ge=0.0,
         description="Cross-encoder re-ranking latency in milliseconds.",
     )
+    chunk: RetrievedChunk | None = Field(
+        default=None,
+        description="Target retrieved chunk with scoring provenance.",
+    )
+    score: float = Field(
+        default=0.0,
+        description="Fused relevance score computed via Reciprocal Rank Fusion.",
+    )
+    parent_section: Section | None = Field(
+        default=None,
+        description="Hydrated parent Section for Small-to-Big context expansion.",
+    )
+    adjacent_chunks: list[RetrievedChunk] = Field(
+        default_factory=list,
+        description="Chronologically adjacent sibling chunks of type RetrievedChunk.",
+    )
+
+    @field_validator("chunk", mode="before")
+    @classmethod
+    def _validate_chunk(cls, v: object) -> object:
+        if isinstance(v, Chunk):
+            return RetrievedChunk(chunk=v, score=0.0)
+        return v
+
+    @field_validator("adjacent_chunks", mode="before")
+    @classmethod
+    def _validate_adjacent_chunks(cls, v: object) -> object:
+        if isinstance(v, list):
+            return [
+                RetrievedChunk(chunk=item, score=0.0) if isinstance(item, Chunk) else item
+                for item in v
+            ]
+        return v
 
 
 # ==============================================================================

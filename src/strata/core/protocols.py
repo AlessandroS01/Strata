@@ -4,7 +4,7 @@ Enforces structural subtyping (typing.Protocol) across storage, retrieval,
 chunking, and generation layers without concrete class inheritance.
 """
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -219,7 +219,7 @@ class HybridSearcher(Protocol):
         query: str,
         top_k: int | None = None,
         payload_filter: Mapping[str, object] | None = None,
-    ) -> SearchResult:
+    ) -> Sequence[object] | SearchResult:
         """Execute decoupled hybrid search pipeline in sub-200ms without LLM."""
         ...
 

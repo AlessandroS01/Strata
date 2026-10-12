@@ -124,7 +124,7 @@ class Settings(BaseSettings):
         description="Batch size for re-ranking cross-encoder scoring.",
     )
     final_top_k: int = Field(
-        default=3,
+        default=5,
         ge=1,
         description="Final number of re-ranked chunks returned for synthesis or search.",
     )
