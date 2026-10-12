@@ -225,9 +225,11 @@ def test_upsert_chunks_dimension_mismatch_raises(memory_store: QdrantVectorStore
 def test_search_empty_query_or_nonpositive_limit(memory_store: QdrantVectorStore) -> None:
     """Verify search returns empty list for empty vector or non-positive limits."""
     query = [0.1, 0.2, 0.3, 0.4]
-    assert memory_store.search(query_vector=[], limit=10) == []
-    assert memory_store.search(query_vector=query, limit=0) == []
-    assert memory_store.search(query_vector=query, limit=-5) == []
+    assert memory_store.search(query_vector=[]) == []
+    with pytest.raises(ValueError, match="Limit must be strictly positive, got 0"):
+        memory_store.search(query_vector=query, limit=0)
+    with pytest.raises(ValueError, match="Limit must be strictly positive, got -100"):
+        memory_store.search(query_vector=query, limit=-100)
 
 
 def test_search_dimension_mismatch_raises(memory_store: QdrantVectorStore) -> None:

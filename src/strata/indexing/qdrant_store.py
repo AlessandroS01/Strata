@@ -195,7 +195,11 @@ class QdrantVectorStore(VectorStore):
         Returns:
             Ranked list of RetrievedContext (RetrievedChunk) models sorted by score descending.
         """
-        if not query_vector or limit <= 0:
+        limit = get_settings().dense_top_k if limit is None else limit
+        if limit <= 0:
+            raise ValueError(f"Limit must be strictly positive, got {limit}")
+
+        if not query_vector:
             return []
 
         if len(query_vector) != self.settings.embedding_dimension:

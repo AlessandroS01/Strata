@@ -416,12 +416,13 @@ class TestBM25EdgeCases:
         assert index.search("!@#$%", limit=5) == []
 
     def test_limit_zero_or_negative(self) -> None:
-        """Non-positive search limit returns empty list."""
+        """Non-positive search limit raises ValueError."""
         index = BM25Index()
         index.index_chunks([make_chunk(text="Some valid content")])
 
-        assert index.search("content", limit=0) == []
-        assert index.search("content", limit=-1) == []
+        for limit in [0, -1]:
+            with pytest.raises(ValueError, match=f"Limit must be strictly positive, got {limit}"):
+                index.search("content", limit=limit)
 
     def test_empty_chunk_text_handling(self) -> None:
         """Chunks with empty text do not raise ZeroDivisionError and return empty search."""

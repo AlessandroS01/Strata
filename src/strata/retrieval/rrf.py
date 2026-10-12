@@ -50,8 +50,9 @@ def reciprocal_rank_fusion(
         if any(math.isnan(w) or w < 0.0 for w in weights):
             raise ValueError(f"Weights must be non-negative, got {weights}")
 
-    if limit is not None and limit <= 0:
-        return []
+    limit = get_settings().fused_top_k if limit is None else limit
+    if limit <= 0:
+        raise ValueError(f"Limit must be strictly positive, got {limit}")
 
     if not rankings or all(len(ranking) == 0 for ranking in rankings):
         return []

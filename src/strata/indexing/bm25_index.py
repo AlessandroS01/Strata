@@ -241,7 +241,11 @@ class BM25Index(SparseIndex):
         Returns:
             List of RetrievedChunk models sorted by BM25 score descending.
         """
-        if self._bm25 is None or not self._corpus or limit <= 0:
+        limit = get_settings().sparse_top_k if limit is None else limit
+
+        if limit <= 0:
+            raise ValueError(f"Limit must be strictly positive, got {limit}")
+        if self._bm25 is None or not self._corpus:
             return []
 
         tokens = self.tokenize(query)

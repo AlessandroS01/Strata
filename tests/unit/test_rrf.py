@@ -35,15 +35,19 @@ def test_mixed_empty_and_populated_rankings() -> None:
 
     fused = reciprocal_rank_fusion([list1, list2], k=60)
     assert len(fused) == 2
-    assert fused[0] == ("chunk_a", pytest.approx(1.0 / 61))
-    assert fused[1] == ("chunk_b", pytest.approx(1.0 / 62))
+    assert fused[0][0] == "chunk_a"
+    assert fused[0][1] == pytest.approx(1.0 / 61)
+    assert fused[1][0] == "chunk_b"
+    assert fused[1][1] == pytest.approx(1.0 / 62)
 
 
 @pytest.mark.parametrize("limit", [0, -1, -100])
-def test_limit_zero_or_negative_returns_empty_list(limit: int) -> None:
-    """A limit of zero or negative returns an empty list without error."""
+def test_limit_zero_or_negative_raises_value_error(limit: int) -> None:
+    """Non-positive search limit raises ValueError."""
     ranking: list[tuple[str, float]] = [("chunk_a", 1.0), ("chunk_b", 0.5)]
-    assert reciprocal_rank_fusion([ranking], k=60, limit=limit) == []
+
+    with pytest.raises(ValueError, match=f"Limit must be strictly positive, got {limit}"):
+        reciprocal_rank_fusion([ranking], k=60, limit=limit)
 
 
 def test_limit_none_returns_all_unique_candidates() -> None:
@@ -241,8 +245,10 @@ def test_deduplication_uses_highest_rank_and_ignores_subsequent() -> None:
     fused = reciprocal_rank_fusion([ranking], k=60)
 
     assert len(fused) == 2
-    assert fused[0] == ("doc_a", pytest.approx(1.0 / 61))
-    assert fused[1] == ("doc_b", pytest.approx(1.0 / 62))
+    assert fused[0][0] == "doc_a"
+    assert fused[0][1] == pytest.approx(1.0 / 61)
+    assert fused[1][0] == "doc_b"
+    assert fused[1][1] == pytest.approx(1.0 / 62)
 
 
 def test_consecutive_duplicates_at_head() -> None:
@@ -255,8 +261,10 @@ def test_consecutive_duplicates_at_head() -> None:
     fused = reciprocal_rank_fusion([ranking], k=60)
 
     assert len(fused) == 2
-    assert fused[0] == ("doc_a", pytest.approx(1.0 / 61))
-    assert fused[1] == ("doc_b", pytest.approx(1.0 / 62))
+    assert fused[0][0] == "doc_a"
+    assert fused[0][1] == pytest.approx(1.0 / 61)
+    assert fused[1][0] == "doc_b"
+    assert fused[1][1] == pytest.approx(1.0 / 62)
 
 
 def test_multiple_duplicates_across_multiple_lists() -> None:
@@ -271,8 +279,10 @@ def test_multiple_duplicates_across_multiple_lists() -> None:
     # In list2: y has rank 1, x has rank 2
     # Total x: 1/61 + 1/62
     # Total y: 1/62 + 1/61 (tie: x vs y -> x < y)
-    assert fused[0] == ("x", pytest.approx(1.0 / 61 + 1.0 / 62))
-    assert fused[1] == ("y", pytest.approx(1.0 / 61 + 1.0 / 62))
+    assert fused[0][0] == "x"
+    assert fused[0][1] == pytest.approx(1.0 / 61 + 1.0 / 62)
+    assert fused[1][0] == "y"
+    assert fused[1][1] == pytest.approx(1.0 / 61 + 1.0 / 62)
 
 
 # -----------------------------------------------------------------------------

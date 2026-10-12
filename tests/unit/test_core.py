@@ -44,8 +44,9 @@ def test_settings_defaults() -> None:
     assert settings.embedding_dimension == 384
     assert settings.reranker_model == "BAAI/bge-reranker-base"
     assert settings.chunk_size == 350
-    assert settings.dense_top_k == 20
-    assert settings.sparse_top_k == 20
+    assert settings.dense_top_k == 30
+    assert settings.sparse_top_k == 30
+    assert settings.fused_top_k == 30
     assert settings.rrf_k == 60
     assert settings.final_top_k == 3
     assert settings.data_dir == Path("./data")

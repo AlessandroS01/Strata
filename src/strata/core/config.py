@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     # Sparse Retrieval (BM25)
     # -------------------------------------------------------------------------
     sparse_top_k: int = Field(
-        default=20,
+        default=30,
         ge=1,
         description="Candidate chunks retrieved by BM25 sparse index.",
     )
@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     # Hybrid Retrieval & Reciprocal Rank Fusion (RRF)
     # -------------------------------------------------------------------------
     dense_top_k: int = Field(
-        default=20,
+        default=30,
         ge=1,
         description="Candidate chunks retrieved by dense vector search.",
     )
@@ -106,7 +106,7 @@ class Settings(BaseSettings):
         description="Reciprocal Rank Fusion smoothing constant k.",
     )
     fused_top_k: int = Field(
-        default=20,
+        default=30,
         ge=1,
         description="Top candidates after RRF fusion routed to re-ranker.",
     )
