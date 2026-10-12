@@ -218,12 +218,13 @@ def test_retrieved_chunk_and_search_result() -> None:
 
     result = SearchResult(
         query="consensus rules",
-        chunks=[retrieved],
-        dense_count=1,
-        sparse_count=1,
+        chunk=retrieved,
+        score=0.95,
         total_latency_ms=45.0,
     )
-    assert len(result.chunks) == 1
+    assert result.chunk is not None
+    assert result.chunk.id == chunk.id
+    assert result.score == 0.95
     assert result.total_latency_ms == 45.0
 
 
@@ -463,7 +464,7 @@ def test_runtime_protocol_checks() -> None:
             top_k: int | None = None,
             payload_filter: Mapping[str, object] | None = None,
         ) -> SearchResult:
-            return SearchResult(query=query, chunks=[])
+            return SearchResult(query=query)
 
     assert isinstance(DummyHybridSearcher(), HybridSearcher)
 

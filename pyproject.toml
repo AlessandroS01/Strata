@@ -95,6 +95,7 @@ warn_unused_ignores = true
 module = [
     "rank_bm25.*",
     "fastembed.*",
+    "flashrank.*",
     "sentence_transformers.*",
     "ragas.*",
     "datasets.*",

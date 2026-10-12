@@ -343,7 +343,7 @@ RetrievedContext = RetrievedChunk
 
 
 class SearchResult(BaseModel):
-    """Decoupled search output containing retrieved chunks and stage latencies.
+    """Decoupled search output representing a hydrated retrieved passage and context window.
 
     Produced in sub-200ms without touching any generative LLM.
     """
@@ -354,52 +354,13 @@ class SearchResult(BaseModel):
         default="",
         description="Original query string.",
     )
-    chunks: list[RetrievedChunk] = Field(
-        default_factory=list,
-        description="Ranked retrieved chunks after RRF and optional re-ranking.",
-    )
-    dense_count: int = Field(
-        default=0,
-        ge=0,
-        description="Number of candidates returned from dense vector index.",
-    )
-    sparse_count: int = Field(
-        default=0,
-        ge=0,
-        description="Number of candidates returned from BM25 sparse index.",
-    )
-    total_latency_ms: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="End-to-end retrieval latency in milliseconds.",
-    )
-    dense_latency_ms: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="Dense vector search latency in milliseconds.",
-    )
-    sparse_latency_ms: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="Sparse BM25 search latency in milliseconds.",
-    )
-    rrf_latency_ms: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="Reciprocal Rank Fusion latency in milliseconds.",
-    )
-    rerank_latency_ms: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="Cross-encoder re-ranking latency in milliseconds.",
-    )
     chunk: RetrievedChunk | None = Field(
         default=None,
         description="Target retrieved chunk with scoring provenance.",
     )
     score: float = Field(
         default=0.0,
-        description="Fused relevance score computed via Reciprocal Rank Fusion.",
+        description="Relevance score assigned by cross-encoder re-ranking.",
     )
     parent_section: Section | None = Field(
         default=None,
@@ -408,6 +369,11 @@ class SearchResult(BaseModel):
     adjacent_chunks: list[RetrievedChunk] = Field(
         default_factory=list,
         description="Chronologically adjacent sibling chunks of type RetrievedChunk.",
+    )
+    total_latency_ms: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="End-to-end retrieval and reranking latency in milliseconds.",
     )
 
     @field_validator("chunk", mode="before")

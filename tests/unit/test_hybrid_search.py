@@ -1,14 +1,17 @@
 """Unit test suite for Strata hybrid retrieval coordinator (StrataHybridSearcher).
 
 Tests verify:
-- End-to-end hybrid retrieval across dense ANN, sparse BM25, and RRF fusion
-- Small-to-Big context expansion (Section hydration)
+- Mandatory injection of Reranker protocol implementation
+- End-to-end hybrid retrieval across dense ANN, sparse BM25, RRF fusion, and cross-encoder reranking
+- Final reranking score assignment and winner reordering
+- Small-to-Big context expansion (Section hydration with deduplication caching)
 - Sliding window sibling chunk expansion
 - Payload filtering and tag forwarding to vector store
 - Validation guardrails and edge-case handling (empty query, bad limits)
 - Data desync tolerance (missing chunk in SQLite)
-- Settings default resolution
+- Settings default resolution (final_top_k)
 - Protocol structural subtyping conformance
+- End-to-end latency calculation inside coordinator
 """
 
 from collections.abc import Mapping
@@ -31,6 +34,7 @@ from strata.core.protocols import (
     DocumentStore,
     Embedder,
     HybridSearcher,
+    Reranker,
     SparseIndex,
     VectorStore,
 )
@@ -48,6 +52,7 @@ class InMemoryDocumentStore(DocumentStore):
         self.documents: dict[str, Document] = {}
         self.sections: dict[str, Section] = {}
         self.chunks: dict[str, Chunk] = {}
+        self.recorded_section_fetches: list[str] = []
 
     def add_document(self, document: Document) -> None:
         self.documents[document.id] = document
@@ -72,9 +77,11 @@ class InMemoryDocumentStore(DocumentStore):
             self.sections[s.id] = s
 
     def get_section(self, section_id: str) -> Section | None:
+        self.recorded_section_fetches.append(section_id)
         return self.sections.get(section_id)
 
     def get_section_by_id(self, section_id: str) -> Section | None:
+        self.recorded_section_fetches.append(section_id)
         return self.sections.get(section_id)
 
     def get_sections_by_document_id(self, document_id: str) -> list[Section]:
@@ -208,6 +215,48 @@ class InMemoryEmbedder(Embedder):
         return self._dim
 
 
+class InMemoryReranker(Reranker):
+    """In-memory cross-encoder reranker mock for testing."""
+
+    def __init__(self, score_offset: float = 0.0) -> None:
+        self.score_offset: float = score_offset
+        self.recorded_calls: list[dict[str, Any]] = []
+        self.custom_scores: dict[str, float] | None = None
+
+    def rerank(
+        self,
+        query: str,
+        candidates: list[RetrievedChunk],
+        top_k: int | None = None,
+    ) -> list[RetrievedChunk]:
+        self.recorded_calls.append(
+            {
+                "query": query,
+                "candidates": candidates,
+                "top_k": top_k,
+            }
+        )
+        limit = top_k if top_k is not None else len(candidates)
+        reranked: list[RetrievedChunk] = []
+        for c in candidates:
+            if self.custom_scores is not None and c.chunk.id in self.custom_scores:
+                new_score = self.custom_scores[c.chunk.id]
+            else:
+                new_score = c.score + self.score_offset
+            reranked.append(
+                c.model_copy(
+                    update={
+                        "score": new_score,
+                        "rerank_score": new_score,
+                    }
+                )
+            )
+
+        # Sort descending by score, tie-break by chunk ID ascending
+        reranked.sort(key=lambda item: (-item.score, item.chunk.id))
+        return reranked[:limit]
+
+
 # ==============================================================================
 # Test Fixtures & Helper Factory
 # ==============================================================================
@@ -252,16 +301,17 @@ def create_sample_section(
 
 
 # ==============================================================================
-# 1. End-to-End Hybrid Search
+# 1. End-to-End Hybrid Search & Reranking Flow
 # ==============================================================================
 
 
 def test_end_to_end_hybrid_search() -> None:
-    """Verify query flows to embedder, vector store, and BM25, and RRF winner is hydrated."""
+    """Verify query flows through dense ANN, sparse BM25, RRF, and mandatory reranker."""
     store = InMemoryDocumentStore()
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder(dimension=4)
+    reranker = InMemoryReranker()
 
     # Prepare chunks in SQLite
     chunk_a = create_sample_chunk("chunk-a", index=0, text="Raft leader election protocol")
@@ -286,6 +336,7 @@ def test_end_to_end_hybrid_search() -> None:
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
         settings=settings,
     )
 
@@ -297,7 +348,6 @@ def test_end_to_end_hybrid_search() -> None:
     # 2. Verify query passed to vector store with candidate depth
     assert len(vector_store.recorded_calls) == 1
     assert vector_store.recorded_calls[0]["query_vector"] == [0.5, 0.5, 0.5, 0.5]
-    # candidate_depth = max(2 * 2, 20) = 20
     assert vector_store.recorded_calls[0]["limit"] == 20
 
     # 3. Verify query passed to sparse index with candidate depth
@@ -305,22 +355,72 @@ def test_end_to_end_hybrid_search() -> None:
     assert sparse_index.recorded_calls[0]["query"] == "consensus algorithms"
     assert sparse_index.recorded_calls[0]["limit"] == 20
 
-    # 4. Verify RRF fusion merged both and returned hydrated chunks
+    # 4. Verify candidates were passed into reranker
+    assert len(reranker.recorded_calls) == 1
+    assert reranker.recorded_calls[0]["query"] == "consensus algorithms"
+    assert reranker.recorded_calls[0]["top_k"] == 2
+
+    # 5. Verify RRF fusion merged both and reranker returned hydrated chunks
     assert len(results) == 2
-    # Both candidates have identical reciprocal sum:
-    # chunk-a: 1/(60+1) + 1/(60+2)
-    # chunk-b: 1/(60+2) + 1/(60+1)
-    # Tie broken lexicographically: "chunk-a" < "chunk-b"
     assert results[0].chunk is not None
     assert results[1].chunk is not None
     assert results[0].chunk.id == "chunk-a"
     assert results[1].chunk.id == "chunk-b"
     assert isinstance(results[0], SearchResult)
     assert results[0].score == pytest.approx(1.0 / 61 + 1.0 / 62)
+    assert results[0].total_latency_ms >= 0.0
+
+
+def test_reranker_reorders_fused_candidates_and_assigns_scores() -> None:
+    """Verify cross-encoder reranker overrides initial RRF ordering and assigns final scores."""
+    store = InMemoryDocumentStore()
+    vector_store = InMemoryVectorStore()
+    sparse_index = InMemorySparseIndex()
+    embedder = InMemoryEmbedder()
+
+    c_leader = create_sample_chunk("c-leader", text="Leader election heartbeat")
+    c_log = create_sample_chunk("c-log", text="Log compaction snapshot")
+    store.add_chunks([c_leader, c_log])
+
+    # Initial dense & sparse retrieval strongly favors c_leader over c_log
+    vector_store.results_to_return = [
+        RetrievedChunk(chunk=c_leader, score=0.99),
+        RetrievedChunk(chunk=c_log, score=0.50),
+    ]
+
+    # Reranker assigns high score to c_log and low score to c_leader
+    reranker = InMemoryReranker()
+    reranker.custom_scores = {
+        "c-leader": 0.15,
+        "c-log": 0.94,
+    }
+
+    searcher = StrataHybridSearcher(
+        sqlite_store=store,
+        vector_store=vector_store,
+        sparse_index=sparse_index,
+        embedder=embedder,
+        reranker=reranker,
+    )
+
+    results = searcher.search(query="snapshot log", top_k=2)
+
+    assert len(results) == 2
+    # c-log was promoted to 1st position by reranker
+    assert results[0].chunk is not None
+    assert results[0].chunk.id == "c-log"
+    assert results[0].score == 0.94
+    assert results[0].chunk.rerank_score == 0.94
+
+    # c-leader was demoted to 2nd position
+    assert results[1].chunk is not None
+    assert results[1].chunk.id == "c-leader"
+    assert results[1].score == 0.15
+    assert results[1].chunk.rerank_score == 0.15
 
 
 # ==============================================================================
-# 2. Small-to-Big Hydration
+# 2. Small-to-Big Hydration & Parent Section Deduplication
 # ==============================================================================
 
 
@@ -330,6 +430,7 @@ def test_small_to_big_hydration_enabled() -> None:
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     section = create_sample_section("sec-42", title="Raft Overview")
     chunk = create_sample_chunk("chunk-1", parent_section_id="sec-42")
@@ -344,6 +445,7 @@ def test_small_to_big_hydration_enabled() -> None:
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
     )
 
     results = searcher.search(query="raft", expand_section=True)
@@ -352,6 +454,8 @@ def test_small_to_big_hydration_enabled() -> None:
     assert results[0].parent_section is not None
     assert results[0].parent_section.id == "sec-42"
     assert results[0].parent_section.title == "Raft Overview"
+    assert results[0].chunk is not None
+    assert results[0].chunk.parent_section == results[0].parent_section
 
 
 def test_small_to_big_hydration_disabled() -> None:
@@ -360,6 +464,7 @@ def test_small_to_big_hydration_disabled() -> None:
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     section = create_sample_section("sec-42", title="Raft Overview")
     chunk = create_sample_chunk("chunk-1", parent_section_id="sec-42")
@@ -374,6 +479,7 @@ def test_small_to_big_hydration_disabled() -> None:
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
     )
 
     results = searcher.search(query="raft", expand_section=False)
@@ -382,12 +488,54 @@ def test_small_to_big_hydration_disabled() -> None:
     assert results[0].parent_section is None
 
 
+def test_section_caching_for_shared_parent_section() -> None:
+    """When multiple chunks share the same parent section, fetch from SQLite only once."""
+    store = InMemoryDocumentStore()
+    vector_store = InMemoryVectorStore()
+    sparse_index = InMemorySparseIndex()
+    embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
+
+    shared_section = create_sample_section("sec-shared", title="Consensus Module")
+    c1 = create_sample_chunk("c1", parent_section_id="sec-shared")
+    c2 = create_sample_chunk("c2", parent_section_id="sec-shared")
+    c3 = create_sample_chunk("c3", parent_section_id="sec-shared")
+
+    store.add_sections([shared_section])
+    store.add_chunks([c1, c2, c3])
+
+    vector_store.results_to_return = [
+        RetrievedChunk(chunk=c1, score=0.9),
+        RetrievedChunk(chunk=c2, score=0.8),
+        RetrievedChunk(chunk=c3, score=0.7),
+    ]
+
+    searcher = StrataHybridSearcher(
+        sqlite_store=store,
+        vector_store=vector_store,
+        sparse_index=sparse_index,
+        embedder=embedder,
+        reranker=reranker,
+    )
+
+    results = searcher.search(query="consensus", expand_section=True, top_k=3)
+
+    assert len(results) == 3
+    for r in results:
+        assert r.parent_section is not None
+        assert r.parent_section.id == "sec-shared"
+
+    # SQLite store must have been queried exactly once for sec-shared due to section_cache
+    assert store.recorded_section_fetches == ["sec-shared"]
+
+
 def test_small_to_big_hydration_missing_section_or_none_parent() -> None:
     """When chunk has no parent_section_id or section is missing, parent_section is None."""
     store = InMemoryDocumentStore()
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     chunk_without_parent = create_sample_chunk("c-no-parent", parent_section_id=None)
     chunk_with_missing_parent = create_sample_chunk("c-missing-parent", parent_section_id="ghost")
@@ -404,6 +552,7 @@ def test_small_to_big_hydration_missing_section_or_none_parent() -> None:
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
     )
 
     results = searcher.search(query="test", expand_section=True)
@@ -423,6 +572,7 @@ def test_sliding_window_expansion_enabled() -> None:
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     c0 = create_sample_chunk("chunk-0", index=0, text="preceding context")
     c1 = create_sample_chunk("chunk-1", index=1, text="target context")
@@ -436,6 +586,7 @@ def test_sliding_window_expansion_enabled() -> None:
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
     )
 
     results = searcher.search(query="target", window_size=1)
@@ -452,6 +603,7 @@ def test_sliding_window_expansion_disabled() -> None:
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     c0 = create_sample_chunk("chunk-0", index=0)
     c1 = create_sample_chunk("chunk-1", index=1)
@@ -464,6 +616,7 @@ def test_sliding_window_expansion_disabled() -> None:
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
     )
 
     results = searcher.search(query="target", window_size=0)
@@ -483,6 +636,7 @@ def test_payload_filter_and_tags_properly_forwarded() -> None:
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     chunk = create_sample_chunk("chunk-1")
     store.add_chunks([chunk])
@@ -493,6 +647,7 @@ def test_payload_filter_and_tags_properly_forwarded() -> None:
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
     )
 
     custom_filter = {"author": "Alessandro", "category": "notes"}
@@ -506,7 +661,6 @@ def test_payload_filter_and_tags_properly_forwarded() -> None:
 
     assert len(vector_store.recorded_calls) == 1
     call = vector_store.recorded_calls[0]
-    # Tags should be passed directly or integrated into filter
     assert call["tags"] == tags
     assert call["payload_filter"] is not None
     assert call["payload_filter"]["author"] == "Alessandro"
@@ -524,12 +678,14 @@ def test_payload_filter_with_mock_without_tags_argument() -> None:
 
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     searcher = StrataHybridSearcher(
         sqlite_store=store,
         vector_store=mock_vs,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
     )
 
     searcher.search("query", tags=["important"])
@@ -545,6 +701,17 @@ def test_payload_filter_with_mock_without_tags_argument() -> None:
 # ==============================================================================
 
 
+def test_reranker_is_mandatory_parameter() -> None:
+    """StrataHybridSearcher requires reranker as a mandatory argument."""
+    with pytest.raises(TypeError, match=r"missing 1 required positional argument: 'reranker'"):
+        StrataHybridSearcher(  # type: ignore[call-arg]
+            sqlite_store=InMemoryDocumentStore(),
+            vector_store=InMemoryVectorStore(),
+            sparse_index=InMemorySparseIndex(),
+            embedder=InMemoryEmbedder(),
+        )
+
+
 @pytest.mark.parametrize("empty_query", ["", "   ", "\t\n"])
 def test_empty_query_returns_empty_list(empty_query: str) -> None:
     """Empty or whitespace-only queries return [] without running search legs."""
@@ -552,12 +719,14 @@ def test_empty_query_returns_empty_list(empty_query: str) -> None:
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     searcher = StrataHybridSearcher(
         sqlite_store=store,
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
     )
 
     results = searcher.search(query=empty_query)
@@ -565,6 +734,7 @@ def test_empty_query_returns_empty_list(empty_query: str) -> None:
     assert len(vector_store.recorded_calls) == 0
     assert len(sparse_index.recorded_calls) == 0
     assert len(embedder.recorded_queries) == 0
+    assert len(reranker.recorded_calls) == 0
 
 
 @pytest.mark.parametrize("invalid_limit", [0, -1, -10])
@@ -575,6 +745,7 @@ def test_invalid_limit_raises_value_error(invalid_limit: int) -> None:
         vector_store=InMemoryVectorStore(),
         sparse_index=InMemorySparseIndex(),
         embedder=InMemoryEmbedder(),
+        reranker=InMemoryReranker(),
     )
 
     with pytest.raises(ValueError, match=r"Search limit must be at least 1"):
@@ -591,6 +762,7 @@ def test_invalid_window_size_raises_value_error() -> None:
         vector_store=InMemoryVectorStore(),
         sparse_index=InMemorySparseIndex(),
         embedder=InMemoryEmbedder(),
+        reranker=InMemoryReranker(),
     )
 
     with pytest.raises(ValueError, match=r"window_size must be non-negative"):
@@ -604,6 +776,7 @@ def test_invalid_weights_raises_value_error() -> None:
         vector_store=InMemoryVectorStore(),
         sparse_index=InMemorySparseIndex(),
         embedder=InMemoryEmbedder(),
+        reranker=InMemoryReranker(),
     )
 
     with pytest.raises(ValueError, match=r"Weights must be non-negative"):
@@ -619,11 +792,11 @@ def test_data_desync_missing_chunk_skipped_safely() -> None:
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     existing_chunk = create_sample_chunk("existing-chunk")
     store.add_chunks([existing_chunk])
 
-    # Vector store contains an orphaned/desynced chunk ID that does not exist in SQLite
     orphaned_chunk = create_sample_chunk("orphaned-chunk")
     vector_store.results_to_return = [
         RetrievedChunk(chunk=orphaned_chunk, score=0.99),
@@ -635,33 +808,35 @@ def test_data_desync_missing_chunk_skipped_safely() -> None:
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
     )
 
     results = searcher.search(query="test")
-    # Orphaned chunk was skipped; only existing chunk is returned
     assert len(results) == 1
     assert results[0].chunk is not None
     assert results[0].chunk.id == "existing-chunk"
 
 
 def test_default_limit_resolves_from_settings() -> None:
-    """When top_k/limit is None, default resolves from settings.fused_top_k."""
+    """When top_k/limit is None, default resolves from settings.final_top_k."""
     store = InMemoryDocumentStore()
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     for i in range(15):
         chunk = create_sample_chunk(f"c-{i}", index=i)
         store.add_chunks([chunk])
         vector_store.results_to_return.append(RetrievedChunk(chunk=chunk, score=1.0 - (i * 0.05)))
 
-    custom_settings = Settings(fused_top_k=7)
+    custom_settings = Settings(final_top_k=7, fused_top_k=15)
     searcher = StrataHybridSearcher(
         sqlite_store=store,
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
         settings=custom_settings,
     )
 
@@ -674,10 +849,10 @@ def test_embedder_failure_raises_model_inference_error() -> None:
     store = InMemoryDocumentStore()
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
+    reranker = InMemoryReranker()
 
     mock_embedder = MagicMock(spec=Embedder)
     mock_embedder.embed_query.side_effect = RuntimeError("Tokenizer crash")
-    # ensure hasattr(embed_text) is false so embed_query is called
     del mock_embedder.embed_text
 
     searcher = StrataHybridSearcher(
@@ -685,10 +860,37 @@ def test_embedder_failure_raises_model_inference_error() -> None:
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=mock_embedder,
+        reranker=reranker,
     )
 
     with pytest.raises(ModelInferenceError, match=r"Embedding query failed"):
         searcher.search(query="failure test")
+
+
+def test_reranker_failure_propagates_model_inference_error() -> None:
+    """Cross-encoder reranking runtime errors propagate as ModelInferenceError."""
+    store = InMemoryDocumentStore()
+    vector_store = InMemoryVectorStore()
+    sparse_index = InMemorySparseIndex()
+    embedder = InMemoryEmbedder()
+
+    chunk = create_sample_chunk("c1")
+    store.add_chunks([chunk])
+    vector_store.results_to_return = [RetrievedChunk(chunk=chunk, score=0.9)]
+
+    mock_reranker = MagicMock(spec=Reranker)
+    mock_reranker.rerank.side_effect = ModelInferenceError("ONNX session evaluation failure")
+
+    searcher = StrataHybridSearcher(
+        sqlite_store=store,
+        vector_store=vector_store,
+        sparse_index=sparse_index,
+        embedder=embedder,
+        reranker=mock_reranker,
+    )
+
+    with pytest.raises(ModelInferenceError, match=r"ONNX session evaluation failure"):
+        searcher.search(query="test query")
 
 
 def test_hybrid_searcher_protocol_conformance() -> None:
@@ -698,6 +900,7 @@ def test_hybrid_searcher_protocol_conformance() -> None:
         vector_store=InMemoryVectorStore(),
         sparse_index=InMemorySparseIndex(),
         embedder=InMemoryEmbedder(),
+        reranker=InMemoryReranker(),
     )
     assert isinstance(searcher, HybridSearcher)
 
@@ -708,6 +911,7 @@ def test_search_result_chunk_and_adjacent_chunks_types() -> None:
     vector_store = InMemoryVectorStore()
     sparse_index = InMemorySparseIndex()
     embedder = InMemoryEmbedder()
+    reranker = InMemoryReranker()
 
     c0 = create_sample_chunk("c-0", index=0, text="preceding")
     c1 = create_sample_chunk("c-1", index=1, text="target")
@@ -721,6 +925,7 @@ def test_search_result_chunk_and_adjacent_chunks_types() -> None:
         vector_store=vector_store,
         sparse_index=sparse_index,
         embedder=embedder,
+        reranker=reranker,
     )
 
     results = searcher.search(query="target", window_size=1)
