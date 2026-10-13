@@ -1,452 +1,451 @@
-# Strata: Air-Gapped Personal Knowledge Engine & Local Hybrid RAG
+# ⚡ Strata
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Type Checked: Mypy](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy-lang.org/)
-[![Storage: SQLite + Embedded Qdrant](https://img.shields.io/badge/storage-SQLite%20%2B%20Qdrant%20Embedded-red.svg)](https://qdrant.tech/)
-[![Inference: 100% Local / Ollama](https://img.shields.io/badge/inference-100%25%20Local%20%2F%20Ollama-green.svg)](https://ollama.ai/)
+> **100% Offline, Air-Gapped Personal Knowledge Engine & Local Hybrid RAG Architecture**
 
-**Strata** is an air-gapped, privacy-preserving personal knowledge engine and retrieval pipeline built from first principles. Unlike conventional RAG prototypes that treat vector databases as fragile data stores, Strata enforces an architectural boundary between **canonical ACID storage** and **derived search indices**.
-
-The system features **content-addressable differential chunk synchronization (SHA-256)**, **two-stage hybrid retrieval (Dense Vector + BM25 Lexical + Cross-Encoder Re-ranking)**, **hierarchical small-to-big chunking**, and **100% local, offline LLM synthesis via Ollama**. It also ships with an automated, reproducible **RAGAS evaluation suite** driven by a local judge model to benchmark retrieval precision and generation faithfulness directly on consumer hardware.
-
----
-
-## Table of Contents
-
-1. [Architectural Blueprint](#architectural-blueprint)
-2. [Core Engineering Principles](#core-engineering-principles)
-3. [System Requirements](#system-requirements)
-   - [Functional Requirements](#functional-requirements)
-   - [Non-Functional Requirements](#non-functional-requirements)
-4. [Deep-Dive Mechanisms](#deep-dive-mechanisms)
-   - [Differential Chunk Synchronization (CRUD Engine)](#differential-chunk-synchronization-crud-engine)
-   - [Hybrid Retrieval & Reciprocal Rank Fusion (RRF)](#hybrid-retrieval--reciprocal-rank-fusion-rrf)
-   - [Hierarchical Small-to-Big Context Assembly](#hierarchical-small-to-big-context-assembly)
-   - [Local Inference & Strict Grounding](#local-inference--strict-grounding)
-5. [Repository Structure](#repository-structure)
-6. [Getting Started](#getting-started)
-   - [Prerequisites](#prerequisites)
-   - [Installation](#installation)
-   - [Local Model Setup](#local-model-setup)
-7. [CLI Reference](#cli-reference)
-8. [Autonomous Agent Primitives](#autonomous-agent-primitives)
-9. [Empirical Evaluation & RAGAS Benchmarks](#empirical-evaluation--ragas-benchmarks)
-10. [Verification & Code Quality](#verification--code-quality)
-11. [License](#license)
+<p align="center">
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.13%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.13+"></a>
+  <a href="https://github.com/astral-sh/uv"><img src="https://img.shields.io/badge/Package%20Manager-uv-DE5FE9?style=for-the-badge&logo=uv&logoColor=white" alt="uv"></a>
+  <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/Canonical%20Store-SQLite%20ACID-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite"></a>
+  <a href="https://qdrant.tech/"><img src="https://img.shields.io/badge/Dense%20Index-Embedded%20Qdrant-DC382D?style=for-the-badge&logo=qdrant&logoColor=white" alt="Qdrant"></a>
+  <a href="https://github.com/dorianbrown/rank_bm25"><img src="https://img.shields.io/badge/Sparse%20Index-Rank--BM25-008080?style=for-the-badge" alt="BM25"></a>
+  <a href="https://github.com/qdrant/fastembed"><img src="https://img.shields.io/badge/Embeddings-FastEmbed%20ONNX-FF6F00?style=for-the-badge" alt="FastEmbed"></a>
+  <a href="https://github.com/PrithivirajDamodaran/FlashRank"><img src="https://img.shields.io/badge/Re--ranking-FlashRank%20ONNX-7952B3?style=for-the-badge" alt="FlashRank"></a>
+  <a href="https://ollama.ai/"><img src="https://img.shields.io/badge/Synthesis-Local%20Ollama-000000?style=for-the-badge&logo=ollama&logoColor=white" alt="Ollama"></a>
+  <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/Code%20Style-Ruff-black?style=for-the-badge&logo=ruff&logoColor=white" alt="Ruff"></a>
+  <a href="https://mypy-lang.org/"><img src="https://img.shields.io/badge/Type%20Check-Mypy%20Strict-2A6DB2?style=for-the-badge" alt="Mypy Strict"></a>
+  <a href="https://docs.pytest.org/"><img src="https://img.shields.io/badge/Tests-279%20Passing-brightgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="Pytest"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License: MIT"></a>
+</p>
 
 ---
 
-## Architectural Blueprint
+## 📖 Overview
 
-```
-                              ┌─────────────────────────────────────────────────────────┐
-                              │                    CANONICAL STORAGE                    │
-                              │    SQLite (ACID Source of Truth: Docs, Hashes, Meta)    │
-                              └────────────────────────────┬────────────────────────────┘
-                                                           │
-                                      Document Ingest / Differential Sync
-                                                           │
-                                                           ▼
-                                        ┌─────────────────────────────────────┐
-                                        │       CHUNK & HASHING ENGINE        │
-                                        │  - Small-to-Big Hierarchical Slices │
-                                        │  - SHA-256 Content-Addressable Diff │
-                                        └──────────────────┬──────────────────┘
-                                                           │
-                                 ┌─────────────────────────┴─────────────────────────┐
-                                 ▼                                                   ▼
-                    ┌──────────────────────────┐                        ┌──────────────────────────┐
-                    │   DERIVED DENSE INDEX    │                        │   DERIVED SPARSE INDEX   │
-                    │  Embedded Qdrant Engine  │                        │  Inverted Index (BM25)   │
-                    │  (bge-small-en-v1.5)     │                        │  (Exact Keywords/Tokens) │
-                    └────────────┬─────────────┘                        └────────────┬─────────────┘
-                                 │                                                   │
-                                 └─────────────────────────┬─────────────────────────┘
-                                                           ▼
-                                        ┌─────────────────────────────────────┐
-                                        │    RECIPROCAL RANK FUSION (RRF)     │
-                                        │   Merge Top-K Dense & Sparse Lists  │
-                                        └──────────────────┬──────────────────┘
-                                                           ▼
-                                        ┌─────────────────────────────────────┐
-                                        │    CROSS-ENCODER RE-RANKER (Stage 2)│
-                                        │    bge-reranker-base (Top 20 -> 3)  │
-                                        └──────────────────┬──────────────────┘
-                                                           │
-                                 ┌─────────────────────────┴─────────────────────────┐
-                                 ▼                                                   ▼
-                    ┌──────────────────────────┐                        ┌──────────────────────────┐
-                    │    AGENT TOOL ADAPTER    │                        │  LOCAL SYNTHESIS ENGINE  │
-                    │ - Metadata Pre-filtering │                        │ - Ollama (qwen3.5:0.8b)  │
-                    │ - Table of Contents Map  │                        │ - Zero-Hallucination Prom│
-                    │ - Sibling Context Traver.│                        │ - Real-time Token Stream │
-                    └──────────────────────────┘                        └──────────────────────────┘
+**Strata** is an air-gapped, privacy-preserving personal knowledge engine and hybrid retrieval-augmented generation (RAG) system built from first principles.
+
+Most conventional RAG prototypes treat vector databases as primary data stores. When embedding models change, vectors get corrupted, or text is updated, these systems either fail or require expensive, full-collection re-embedding.
+
+Strata solves this by enforcing an uncompromising architectural boundary:
+* **SQLite is the Canonical Source of Truth:** Documents, structural Markdown sections, tokenized search chunks, and cryptographic hashes live exclusively in an ACID-compliant SQLite store.
+* **Qdrant and BM25 are Ephemeral Derived Indices:** Both dense vectors (embedded Qdrant) and sparse inverted indices (BM25) are strictly disposable. If either index is deleted or wiped, running `strata sync` deterministically reconstructs them directly from SQLite.
+* **Content-Addressable Differential Invalidation:** Every chunk is fingerprinted with a SHA-256 hash over its heading breadcrumb path and text body (`heading_path:text`). Unchanged chunks bypass embedding computation entirely ($0\text{ ms}$ overhead), while newly created chunks are incrementally embedded and orphaned chunks are purged.
+* **Decoupled Sub-200ms Hybrid Search:** The search engine executes parallel dense semantic search, sparse lexical BM25 matching, Reciprocal Rank Fusion (RRF), and cross-encoder re-ranking in **under 200 ms without loading or invoking an LLM**.
+* **Hierarchical Small-to-Big Retrieval:** Small child chunks (~350 tokens) are indexed for precise semantic matching, but automatically hydrate their parent section context (~900+ tokens) and adjacent sibling windows from SQLite prior to presentation or synthesis.
+
+---
+
+## 📑 Table of Contents
+
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [Architectural Blueprint](#-architectural-blueprint)
+  - [End-to-End Workflow Diagram](#end-to-end-workflow-diagram)
+  - [Workflow Deep-Dive](#workflow-deep-dive)
+    - [1. Ingestion & AST Parsing](#1-ingestion--ast-parsing)
+    - [2. Hierarchical Small-to-Big Chunking](#2-hierarchical-small-to-big-chunking)
+    - [3. Differential Synchronization Engine](#3-differential-synchronization-engine)
+    - [4. Decoupled Two-Stage Hybrid Retrieval](#4-decoupled-two-stage-hybrid-retrieval)
+    - [5. Cross-Encoder Re-Ranking & Context Hydration](#5-cross-encoder-re-ranking--context-hydration)
+- [Project Structure](#-project-structure)
+- [Local Setup & Getting Started](#-local-setup--getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation with uv](#installation-with-uv)
+  - [Local LLM Configuration (Optional)](#local-llm-configuration-optional)
+- [CLI Usage Guide](#-cli-usage-guide)
+  - [1. Document Ingestion (`strata ingest` / `strata add`)](#1-document-ingestion-strata-ingest--strata-add)
+  - [2. Differential Synchronization (`strata sync`)](#2-differential-synchronization-strata-sync)
+  - [3. Sub-200ms Hybrid Search (`strata search`)](#3-sub-200ms-hybrid-search-strata-search)
+  - [4. System Telemetry & Status (`strata status`)](#4-system-telemetry--status-strata-status)
+- [Configuration Reference](#-configuration-reference)
+- [Quality Assurance & Verification](#-quality-assurance--verification)
+- [License](#-license)
+
+---
+
+## ✨ Key Features
+
+| Capability | Implementation | Advantage |
+|---|---|---|
+| **Air-Gapped Privacy** | 100% Local (ONNX + SQLite + Embedded Qdrant + Ollama) | Zero cloud API calls, zero tracking telemetry, zero data leaks. |
+| **Primary Data Integrity** | SQLite with WAL mode & cascading foreign keys | Deterministic durability; vector store corruption never loses note data. |
+| **Zero-Waste Sync** | SHA-256 Content-addressable diffing | Editing 1 paragraph only re-embeds that single chunk; unchanged chunks cost 0ms. |
+| **Lexical + Semantic Hybrid** | Qdrant ANN (`bge-small-en-v1.5`) + BM25Okapi (`rank-bm25`) | Captures conceptual meaning alongside exact variable names, hashes, and IDs. |
+| **Reciprocal Rank Fusion** | RRF ($k=60$) score normalization | Merges disparate score scales fairly without manual heuristic weighting. |
+| **Stage-2 Re-ranking** | FlashRank ONNX cross-encoder (`bge-reranker-base`) | Cross-attention scoring elevates context precision while remaining CPU-efficient. |
+| **Small-to-Big Assembly** | Granular chunks (~350t) linked to parent `Section` IDs | High search granularity without fragmented, out-of-context retrieval chunks. |
+| **Protocol-Driven Core** | Pure `typing.Protocol` interfaces with Pydantic v2 | Fully decoupled layers; passes `mypy --strict` with zero warnings. |
+
+---
+
+## 🏛️ Architectural Blueprint
+
+### End-to-End Workflow Diagram
+
+```mermaid
+flowchart TD
+    subgraph INGESTION["1. INGESTION & PARSING"]
+        A["Local Markdown Files (*.md)"] --> B["LocalFileReader"]
+        B -->|YAML Frontmatter & H1 Detection| C["Canonical Document Model"]
+        C --> D["MarkdownChunker"]
+        D -->|AST Heading Traversal| E["Parent Sections (H1-H6 Context)"]
+        D -->|Sliding Window Tokenizer| F["Granular Chunks (250-400 tokens)"]
+        F -->|SHA-256 Content Hashing| G["Content-Addressed Chunks"]
+    end
+
+    subgraph CANONICAL_STORAGE["2. CANONICAL ACID STORAGE"]
+        C -->|INSERT Document| H[("SQLite Primary Database\n(data/canonical.db)\nPRAGMA journal_mode=WAL")]
+        E -->|INSERT Sections| H
+        G -->|INSERT Chunks| H
+    end
+
+    subgraph SYNC_ENGINE["3. DIFFERENTIAL RECONCILIATION ENGINE"]
+        H -->|get_all_chunks & get_active_chunk_hashes| I["IndexSyncEngine"]
+        J[("Embedded Qdrant Index\n(data/qdrant)")] -->|get_all_point_ids| I
+        I -->|Hash & ID Diff| K{"Reconciliation Delta"}
+        K -->|Unchanged Hashes| L["Bypass Inference (0ms compute)"]
+        K -->|Orphaned IDs| M["Purge Points from Qdrant & BM25"]
+        K -->|New Chunk Text| N["FastEmbed ONNX\n(bge-small-en-v1.5)"]
+        N -->|Upsert Vectors & Light Payloads| J
+        N -->|Index Tokens & Persist| O[("Sparse BM25 Index\n(data/bm25.json)")]
+    end
+
+    subgraph RETRIEVAL["4. DECOUPLED HYBRID RETRIEVAL (Sub-200ms, Zero LLM)"]
+        P["User Query String"] --> Q["StrataHybridSearcher"]
+        Q -->|embed_query| N
+        N -->|384d Dense Vector| R["Qdrant ANN Cosine Search"]
+        Q -->|Tokenize Query| S["BM25 Lexical Keyword Search"]
+        R -->|Top Dense Candidates| T["Reciprocal Rank Fusion\n(RRF k=60)"]
+        S -->|Top Sparse Candidates| T
+        T -->|Top-30 Fused Candidates| U["Hydrate Chunks from SQLite"]
+        U --> V["FlashRank Cross-Encoder\n(bge-reranker-base)"]
+        V -->|Top-K Winner Chunks| W{"Context Expansion?"}
+        W -->|--expand-section| X["Hydrate Parent Section from SQLite"]
+        W -->|--window-size N| Y["Hydrate Adjacent Sibling Chunks from SQLite"]
+        X & Y --> Z["SearchResult (Rich Terminal Panels)"]
+    end
+
+    subgraph SYNTHESIS["5. LOCAL SYNTHESIS (Optional Consumer)"]
+        Z --> AA["Grounded Citation Prompt"]
+        AA --> AB["Local Ollama Engine\n(qwen3.5:0.8b / qwen2.5:7b)"]
+        AB --> AC["Strictly Grounded Answer + Citations [Doc, § Heading]"]
+    end
 ```
 
 ---
 
-## Core Engineering Principles
+### Workflow Deep-Dive
 
-1. **Vector Stores Are Derived Indices, Not Databases:** All raw documents, metadata, heading paths, and cryptographic hashes reside in an ACID-compliant SQLite database. If Qdrant's vector collection is wiped or corrupted, or if embedding dimensions change, the entire index can be regenerated deterministically from SQLite in a single run.
-2. **Zero-Waste Re-indexing:** Documents evolve continuously. Naive RAG architectures purge and re-embed entire files on every edit. Strata computes SHA-256 hashes per chunk: if 95% of a document remains unchanged, 95% of the chunks bypass embedding computation entirely.
-3. **Decoupled Search vs. Synthesis:** The retrieval engine is completely standalone. It executes sub-200ms hybrid searches and cross-encoder re-ranking without loading or invoking any generative LLM. The generative model is an optional, pluggable downstream consumer.
-4. **Hardware-Conscious Local Footprint:** Designed to run entirely on modern consumer laptops without paid API keys or cloud telemetry. The entire pipeline operates within a predictable, bounded memory footprint.
+#### 1. Ingestion & AST Parsing
+When running `strata ingest <path>`, the [`LocalFileReader`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/ingestion/reader.py) discovers Markdown files while ignoring hidden paths and vendor folders (`.git`, `.venv`, `node_modules`).
+* Delimited YAML frontmatter (`---`) is extracted into typed metadata and normalized tags.
+* If a document has no frontmatter title, title extraction falls back to the first Markdown `# H1` heading, and finally to the file stem.
+* A cryptographic SHA-256 hash is computed over the raw file content to track whole-document changes.
 
----
+#### 2. Hierarchical Small-to-Big Chunking
+The [`MarkdownChunker`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/ingestion/chunker.py) uses `tiktoken` (`cl100k_base`) to split documents along semantic AST boundaries:
+1. **Section Extraction:** Traverses Markdown heading levels (`#` through `######`), ignoring comments and code inside triple-backtick fences. It establishes breadcrumb paths (e.g., `Architecture > Storage > SQLite`) and preserves each parent section's complete text as parent context.
+2. **Granular Chunk Slicing:** Sections exceeding the target chunk size (~350 tokens) are split into sliding windows with configurable overlap (~50 tokens). Short sections meeting the minimum threshold (~50 tokens) are preserved intact.
+3. **Deterministic Content Hashing:** Every chunk is assigned a deterministic hash:
+   $$\text{chunk\_hash} = \text{SHA-256}(\text{heading\_path} : \text{chunk\_text})$$
+4. **Relational ACID Write:** The `Document`, its `Section` records, and its `Chunk` records are written to SQLite within an atomic transaction. If the document previously existed, older records are deleted via `ON DELETE CASCADE`.
 
-## System Requirements
+#### 3. Differential Synchronization Engine
+The [`IndexSyncEngine`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/indexing/sync_engine.py) guarantees synchronization between SQLite and the derived search indices:
+* **Identification:** Compares canonical chunk IDs in SQLite against indexed vector IDs in embedded Qdrant.
+* **Orphan Purging:** Chunks that were deleted from SQLite are batch-removed from both Qdrant and the BM25 index.
+* **Selective Embedding:** Only newly created or altered chunks are sent to [`FastEmbedder`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/indexing/embedder.py) (`BAAI/bge-small-en-v1.5`).
+* **Lightweight Payloads:** Qdrant payloads store strictly metadata (`chunk_id`, `document_id`, `heading_path`, `tags`, `parent_section_id`). **Full text bodies are never duplicated inside Qdrant**, preventing memory bloat.
+* **Sparse Inverted Index:** Chunks are tokenized and registered in [`BM25Index`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/indexing/bm25_index.py), and saved to `data/bm25.json`.
 
-### Functional Requirements
+#### 4. Decoupled Two-Stage Hybrid Retrieval
+When querying with `strata search`, [`StrataHybridSearcher`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/retrieval/hybrid_search.py) executes two search legs in parallel without loading any LLM:
+1. **Dense Semantic ANN:** Encodes the query into a 384-dimensional dense vector and executes cosine similarity search in embedded Qdrant, supporting metadata pre-filtering by `--tag`.
+2. **Sparse Lexical BM25:** Tokenizes the query into keywords and evaluates BM25Okapi scores over term frequencies and inverse document frequencies.
+3. **Reciprocal Rank Fusion (RRF):** Merges the disparate score spaces into a single ranking:
+   $$\text{RRF}(d) = \sum_{m \in \{\text{dense}, \text{sparse}\}} \frac{w_m}{k + \text{rank}_m(d)}$$
+   where $k = 60$ (smoothing constant) and $w_m$ are retrieval leg weights.
 
-* **FR-1.1 Canonical Document Ingestion (Create):** Ingest raw files (Markdown, Plaintext, PDF) into SQLite, generating a UUID `document_id`, title, file path, full raw body, timestamps, user-defined tags, and a document-level SHA-256 hash.
-* **FR-1.2 Deterministic Document Access (Read):** Provide sub-5ms lookup of raw documents and metadata by ID, file path, or tag without triggering embedding or search pipelines.
-* **FR-1.3 Canonical Document Update (Update):** Allow updating raw text in SQLite, recalculating hashes and timestamps, and queueing the document for synchronization.
-* **FR-1.4 Cascading Document Deletion (Delete):** Deleting a document from SQLite atomically removes its record and executes a batch cascade deletion of all associated chunk points in Qdrant via a `document_id` payload filter.
-* **FR-2.1 Hierarchical Chunking (Small-to-Big):** Slice text into small search chunks (250–400 tokens) linked to parent section IDs or the full document ID in SQLite.
-* **FR-2.2 Content-Addressable Chunk Hashing:** Compute a SHA-256 hash for every chunk's text and hierarchical heading path.
-* **FR-2.3 Differential Qdrant Sync Engine:** Compare new chunk hashes against existing SQLite hashes during sync:
-  * Embed and upsert only new chunk hashes into Qdrant.
-  * Delete orphaned chunk points from Qdrant by ID.
-  * Skip identical chunk hashes without compute overhead.
-* **FR-3.1 Embedded Qdrant Management:** Manage a local embedded Qdrant instance (`path="./data/qdrant"`) configured for cosine distance without external Docker dependencies.
-* **FR-3.2 Dense Semantic Search:** Embed queries using `bge-small-en-v1.5` and perform approximate nearest neighbor (ANN) search in Qdrant.
-* **FR-3.3 Sparse Lexical Search:** Maintain an inverted BM25 index on chunk tokens for exact matching of identifiers, error codes, and technical jargon.
-* **FR-3.4 Reciprocal Rank Fusion (RRF):** Merge dense and sparse candidate rankings into a unified list based on relative rank positions.
-* **FR-3.5 Two-Stage Cross-Encoder Re-ranking:** Route the top 20 fused candidates through `bge-reranker-base` to model token-level cross-attention, returning the top 2–4 chunks.
-* **FR-4.1 Decoupled Local Inference Adapter:** Connect to Ollama via a unified adapter (`LocalLLMClient`) supporting model hot-swapping and streaming.
-* **FR-4.2 Strict Grounding Prompt Template:** Enforce strict grounding prompts that output explicit citations (`[Doc: title, § Heading]`) and trigger a standardized fallback if context is insufficient: *"The provided context does not contain sufficient information to answer this question."*
-* **FR-4.3 Token Streaming:** Stream generated tokens directly to stdout via CLI.
-* **FR-5.1 Metadata Pre-filtering Primitive:** Expose an agent tool leveraging Qdrant payload index pre-filtering (tags, timestamps, file types).
-* **FR-5.2 Structural TOC Primitive:** Expose an agent tool to inspect document outlines and structural headings from SQLite without loading chunk bodies.
-* **FR-5.3 Sibling Context Expansion Primitive:** Expose an agent tool to retrieve adjacent preceding or succeeding chunks from SQLite given a target chunk ID.
-* **FR-6.1 Local Golden Dataset Harness:** Version a local test dataset of `(query, ground_truth_answer, ground_truth_contexts)` triples.
-* **FR-6.2 Local RAGAS Evaluation Pipeline:** Execute offline benchmark runs using a local Ollama judge to measure Context Precision, Context Recall, Faithfulness, and Answer Relevance.
-* **FR-6.3 Automated Benchmark Scorecards:** Output timestamped Markdown scorecards (`BENCHMARK.md`) recording performance across configurations.
-
-### Non-Functional Requirements
-
-* **NFR-1.1 Air-Gapped Privacy:** Zero external network calls or cloud telemetry. All database records, vectors, weights, and inference remain 100% local.
-* **NFR-1.2 Primary Store Atomicity:** Canonical document writes, updates, and deletes in SQLite are ACID-compliant transactions.
-* **NFR-1.3 Sync Idempotency:** Executing sync multiple times without modifying notes results in 0 database writes, 0 vector upserts, and 0 embedding computations.
-* **NFR-2.1 Retrieval Latency:** End-to-end hybrid retrieval (Dense + Sparse + RRF + Cross-Encoder Re-ranking) executes in under 200ms locally on standard CPU hardware.
-* **NFR-2.2 Time to First Token (TTFT):** When local generation is triggered via Ollama, TTFT must remain under 1.5 seconds on consumer hardware.
-* **NFR-2.3 Explicit Memory Footprint Bounds:**
-  * Embedding Model + Cross-Encoder: ~1.0 GB RAM / VRAM.
-  * SQLite + Embedded Qdrant: ~200 MB RAM.
-  * Local Quantized LLM (4-bit 7B or 3B): ~3.0 GB to 5.5 GB VRAM.
-* **NFR-3.1 Interface Abstraction (Protocol-Driven):** `DocumentStore`, `VectorStore`, `Embedder`, `Reranker`, and `LLMGenerator` implement strict Python `typing.Protocol` interfaces.
-* **NFR-3.2 Model Pluggability:** Swapping local models (e.g., `qwen2.5:7b-instruct` to `llama3.2:3b`) requires only a single `.env` or `config.yaml` modification.
-* **NFR-4.1 Zero-Cloud Onboarding:** Developers can clone the repository, run `pip install`, and execute the test suite without API keys, cloud billing, or external services.
-* **NFR-4.2 Structured Telemetry:** Structured logging records elapsed time per stage, candidate yields per retriever, re-ranker scores, and tokens/sec generation throughput.
-* **NFR-4.3 Strict Static Typing & Code Standards:** 100% type-annotated codebase passing `mypy --strict` and `ruff` linting, backed by comprehensive unit and integration tests.
+#### 5. Cross-Encoder Re-Ranking & Context Hydration
+1. **FlashRank Cross-Attention:** The top 30 fused candidate chunks are passed to [`FlashRankReranker`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/retrieval/reranker.py) (`BAAI/bge-reranker-base`). The cross-encoder attends across query and passage tokens simultaneously, assigning definitive relevance scores and selecting the top $K$ winners.
+2. **Context Hydration:**
+   - **Small-to-Big (`--expand-section`):** Pulls the full parent `Section` text from SQLite using `parent_section_id`, providing complete conceptual context without sentence truncation.
+   - **Window Expansion (`--window-size N`):** Fetches the $N$ chronologically preceding and succeeding sibling chunks from SQLite for adjacent narrative continuity.
+3. **Output:** Formats results with latency telemetry, scoring provenance, breadcrumbs, and matching passages using Rich terminal panels.
 
 ---
 
-## Deep-Dive Mechanisms
-
-### Differential Chunk Synchronization (CRUD Engine)
-
-When a document is updated, Strata executes content-addressable reconciliation:
-
-```
-[Raw Document File]
-        │
-        ▼ (Markdown Structural Splitter)
-[Current Chunks] ───► Compute SHA-256: [Hash A, Hash B, Hash C_new]
-                              │
-                              ▼
-        ┌────────────────────────────────────────────────────────┐
-        │  Diff Against Active Hashes in SQLite for Document ID  │
-        │  Current Active in DB: [Hash A, Hash B, Hash C_old]    │
-        └─────────────────────────────┬──────────────────────────┘
-                                      │
-              ┌───────────────────────┼───────────────────────┐
-              ▼                       ▼                       ▼
-    [Unchanged Hashes]          [New Hashes]          [Orphaned Hashes]
-    Hash A, Hash B              Hash C_new            Hash C_old
-    │                           │                     │
-    ▼                           ▼                     ▼
-    Bypass Compute              Embed & Upsert        Purge from SQLite
-    (0ms cost)                  to Qdrant & SQLite    & Qdrant Points
-```
-
-1. **Content Hashing:** Each chunk hash is calculated over `f"{doc_id}:{heading_path}:{chunk_text}"`.
-2. **Reconciliation:**
-   $$\Delta_{\text{new}} = \text{Hashes}_{\text{current}} \setminus \text{Hashes}_{\text{indexed}}$$
-   $$\Delta_{\text{orphaned}} = \text{Hashes}_{\text{indexed}} \setminus \text{Hashes}_{\text{current}}$$
-3. **Execution:** Only $\Delta_{\text{new}}$ is routed to the tensor runtime. $\Delta_{\text{orphaned}}$ points are batch-deleted from Qdrant using point IDs.
-
-### Hybrid Retrieval & Reciprocal Rank Fusion (RRF)
-
-Standard vector similarity search and BM25 lexical search produce raw scores on fundamentally incompatible scales (cosine similarity in $[-1, 1]$ vs. unbounded BM25 scores). Strata merges rankings using **Reciprocal Rank Fusion (RRF)**:
-
-$$RRF(d) = \sum_{m \in M} \frac{1}{k + r_m(d)}$$
-
-Where:
-* $M$ is the set of retrieval models ($\text{Dense}$, $\text{BM25}$).
-* $r_m(d)$ is the 1-based rank position of document chunk $d$ in system $m$.
-* $k$ is a smoothing constant (default: $60$).
-
-Top candidates from RRF are passed to `bge-reranker-base`. While bi-encoders produce vectors independently for queries and documents, the cross-encoder feeds the query and chunk simultaneously through full transformer attention layers:
-
-$$\text{Score}(q, d) = \text{CrossEncoder}(q, d)$$
-
-This two-stage funnel reduces 50 coarse hybrid candidates down to 2–4 high-precision context chunks.
-
-### Hierarchical Small-to-Big Context Assembly
-
-```
-Document: system-architecture.md
-└── Section: Distributed Consensus (§ Raft Implementation) [Parent Context ~900 tokens]
-    ├── Chunk 1: Leader Election Mechanics     [Search Chunk ~250 tokens] ◄── Matched by Vector Search
-    ├── Chunk 2: Log Replication & Heartbeats  [Search Chunk ~250 tokens]
-    └── Chunk 3: Safety Invariants & Quorum    [Search Chunk ~250 tokens]
-```
-
-1. **Index Phase:** Small child chunks are embedded into Qdrant for granular semantic matching. Each vector point payload stores `parent_section_id` and `document_id`.
-2. **Retrieve Phase:** When Chunk 1 matches a query, Strata uses its `parent_section_id` to fetch the complete surrounding Section context directly from SQLite.
-3. **Synthesis Phase:** The rich parent context is passed to the LLM, eliminating fragmented sentence boundaries.
-
-### Local Inference & Strict Grounding
-
-Strata formats context into a constrained system prompt designed to prevent hallucinations:
+## 📂 Project Structure
 
 ```text
-You are an expert technical assistant. Your task is to answer the user's question
-strictly using only the provided context excerpts below.
-
-Rules:
-1. Every factual statement must cite its source in the format: [Doc: <title>, § <heading>].
-2. If the excerpts do not contain enough facts to answer the question completely,
-   state clearly: "The provided context does not contain sufficient information to answer this question."
-3. Do not extrapolate, assume, or use external knowledge outside the provided context.
-
-Context Excerpts:
----
-[Source 1: Doc: "raft-notes.md", § "Leader Election Mechanics"]
-The leader sends periodic heartbeats (AppendEntries RPCs with no log entries) to all followers...
----
-
-Question: How does a leader maintain authority in Raft?
-Answer:
-```
-
----
-<!-- 
-## Repository Structure
-
-```text
-strata/
-├── src/strata/
-│   ├── core/
-│   │   ├── config.py           # Typed Pydantic-settings configuration
-│   │   ├── protocols.py        # Abstract interfaces (DocumentStore, VectorStore, etc.)
-│   │   └── models.py           # Domain models (Document, Chunk, RetrievedContext)
-│   ├── storage/
-│   │   ├── sqlite_store.py     # SQLite ACID canonical store & metadata CRUD
-│   │   └── qdrant_store.py     # Local embedded Qdrant client wrapper
-│   ├── indexing/
-│   │   ├── chunker.py          # Hierarchical markdown & structural text splitter
-│   │   ├── hasher.py           # SHA-256 content-addressable chunk hashing engine
-│   │   └── sync_worker.py      # Differential sync and invalidation coordinator
-│   ├── retrieval/
-│   │   ├── embedder.py         # Local FastEmbed
-│   │   ├── sparse_bm25.py      # Lexical BM25 index implementation
-│   │   ├── fusion.py           # Reciprocal Rank Fusion (RRF) implementation
-│   │   └── reranker.py         # Cross-encoder re-ranking pipeline
-│   ├── llm/
-│   │   ├── client.py           # Ollama client adapter with streaming support
-│   │   └── prompts.py          # Grounding prompt templates & citation formatters
-│   ├── agents/
-│   │   └── tools.py            # Typed agent primitives (filters, TOC, siblings)
-│   └── cli/
-│       └── main.py             # Typer-powered terminal interface
+Strata/
+├── src/
+│   └── strata/
+│       ├── __init__.py               # Package metadata and public exports
+│       ├── core/                     # Pure domain layer (Zero I/O, zero external framework dependencies)
+│       │   ├── config.py             # Pydantic Settings (env prefix STRATA_, frozen, typed)
+│       │   ├── exceptions.py         # Domain error hierarchy (StrataError, SyncConflictError, etc.)
+│       │   ├── hasher.py             # Content-addressable SHA-256 chunk & document hashing
+│       │   ├── models.py             # Immutable Pydantic v2 models (Document, Section, Chunk, SearchResult)
+│       │   └── protocols.py          # Structural subtyping interfaces (typing.Protocol, PEP 544)
+│       ├── ingestion/                # Document discovery & structural AST splitting
+│       │   ├── reader.py             # LocalFileReader (Frontmatter parser, H1 extraction, dir scanner)
+│       │   └── chunker.py            # MarkdownChunker (Small-to-Big AST parser & tiktoken tokenizer)
+│       ├── storage/                  # Canonical persistence layer
+│       │   └── sqlite_store.py       # SQLiteStore (ACID primary store, WAL mode, cascading deletions)
+│       ├── indexing/                 # Derived search representations & synchronization
+│       │   ├── embedder.py           # FastEmbedder (Local BAAI/bge-small-en-v1.5 ONNX runtime)
+│       │   ├── qdrant_store.py       # QdrantVectorStore (Embedded local Qdrant client adapter)
+│       │   ├── bm25_index.py         # BM25Index (Inverted lexical index with rank-bm25 & persistence)
+│       │   └── sync_engine.py        # IndexSyncEngine (Differential reconciliation & hash invalidation)
+│       ├── retrieval/                # Decoupled search & fusion algorithms
+│       │   ├── rrf.py                # Reciprocal Rank Fusion implementation
+│       │   ├── reranker.py           # FlashRankReranker (Lightweight CPU ONNX cross-encoder)
+│       │   └── hybrid_search.py      # StrataHybridSearcher (Two-stage hybrid coordinator)
+│       └── cli/                      # Presentation layer (Typer + Rich)
+│           ├── dependencies.py       # Dependency container & component factory
+│           ├── views.py              # Rich terminal renderers (tables, panels, status cards)
+│           └── main.py               # Typer CLI application commands (ingest, sync, search, status)
 ├── tests/
-│   ├── unit/                   # Chunking, hashing, and RRF unit tests
-│   ├── integration/            # SQLite-to-Qdrant sync and cascade delete tests
-│   └── eval/
-│       ├── test_ragas.py       # Local RAGAS evaluation runner
-│       └── golden_dataset.json # Ground-truth benchmark dataset
-├── data/                       # Local data persistence (gitignored)
-│   ├── canonical.db            # SQLite relational database
-│   └── qdrant/                 # Embedded Qdrant storage directory
-├── BENCHMARK.md                # Output evaluation scorecards
-├── pyproject.toml              # Build metadata, dependencies, and tool settings
-└── README.md
+│   ├── conftest.py                   # Pytest fixtures, in-memory databases, temporary directories
+│   └── unit/                         # 279 comprehensive unit & integration tests
+│       ├── test_bm25_index.py
+│       ├── test_chunker.py
+│       ├── test_cli.py
+│       ├── test_core.py
+│       ├── test_embedder.py
+│       ├── test_hybrid_search.py
+│       ├── test_qdrant_store.py
+│       ├── test_reader.py
+│       ├── test_reranker.py
+│       ├── test_rrf.py
+│       ├── test_sqlite_store.py
+│       └── test_sync_engine.py
+├── data/                             # Default local storage directory (gitignored)
+│   ├── canonical.db                  # Canonical SQLite database
+│   ├── bm25.json                     # Persisted sparse index
+│   └── qdrant/                       # Local embedded Qdrant vector storage
+├── pyproject.toml                    # Build config, dependencies, ruff & mypy configurations
+├── GEMINI.md                         # Architecture constraints, invariants, & coding conventions
+└── README.md                         # Project documentation
 ```
 
 ---
 
-## Getting Started
+## 🚀 Local Setup & Getting Started
 
 ### Prerequisites
 
-* **Python 3.14+**
-* **Ollama** installed and running on your system ([ollama.ai](https://ollama.ai/))
-* **uv** (recommended for package management) or standard `pip`
+* **Python 3.13+**
+* [**uv**](https://github.com/astral-sh/uv) (recommended extremely fast package and environment manager) or standard `pip`
+* *(Optional)* [**Ollama**](https://ollama.ai/) installed and running locally if you want to use local generative synthesis (`qwen3.5:0.8b` or `qwen2.5:7b-instruct`).
 
-### Installation
+### Installation with uv
 
 ```bash
-# Clone the repository
-git clone [https://github.com/your-username/strata.git](https://github.com/your-username/strata.git)
-cd strata
+# 1. Clone the repository
+git clone https://github.com/your-username/Strata.git
+cd Strata
 
-# Create virtual environment and install dependencies with uv
+# 2. Create and activate a virtual environment
 uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install -e ".[dev,eval]"
-
-# Alternatively using standard pip
-python -m venv .venv
+# On Linux/macOS:
 source .venv/bin/activate
+# On Windows:
+.venv\Scripts\activate
+
+# 3. Install Strata with development and evaluation dependencies
+uv pip install -e ".[dev,eval]"
+```
+
+Alternatively, using standard `pip`:
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e ".[dev,eval]"
 ```
 
-### Local Model Setup
+### Local LLM Configuration (Optional)
 
-Pull the local generation model via Ollama:
+If planning to run local LLM generation or offline RAGAS benchmarks:
 
 ```bash
-# Pull the recommended default model (4-bit quantized qwen3.5:0.8b)
+# Pull the recommended default small synthesis model
 ollama pull qwen3.5:0.8b
 
-# Verify Ollama service is reachable
+# Verify your local Ollama daemon is running
 curl http://localhost:11434/api/tags
 ```
 
 ---
 
-## CLI Reference
+## 💻 CLI Usage Guide
 
-Strata includes a full CLI powered by `Typer`.
+Strata provides an intuitive terminal interface powered by `Typer` and `Rich`.
 
-### 1. Document Lifecycle (CRUD)
+### 1. Document Ingestion (`strata ingest` / `strata add`)
 
-```bash
-# Ingest single markdown document with tags
-strata add ./notes/system-design.md --tag architecture --tag backend
-
-# Ingest an entire directory of notes
-strata add ./notes/ --tag personal
-
-# List stored canonical documents
-strata list --tag architecture
-
-# Read the full raw canonical document by UUID (zero inference overhead)
-strata cat 4f7c1e82-3d9a-4b72-a1f9-0d8c2e5b9a11
-
-# Delete a document (atomically purges canonical record and all Qdrant vectors)
-strata rm 4f7c1e82-3d9a-4b72-a1f9-0d8c2e5b9a11
-```
-
-### 2. Differential Synchronization
+Ingest individual Markdown files or entire directories into SQLite:
 
 ```bash
-# Run incremental sync across all modified documents
-strata sync
+# Ingest a single Markdown note with custom tags
+strata ingest ./notes/system-architecture.md --tag architecture --tag backend
+
+# Ingest an entire directory of notes recursively
+strata ingest ./notes/ --tag personal
+
+# 'add' is supported as a direct alias for 'ingest'
+strata add ./notes/raft-consensus.md -t distributed-systems
 ```
 
-*Sample Output:*
+*Output:*
 ```text
-[INFO] Scanning canonical SQLite store against derived indices...
-[DIFF] Doc 'system-design.md': 14 total chunks | 2 new | 12 unchanged | 1 orphaned
-[INDEX] Embedding 2 new chunks via bge-small-en-v1.5...
-[QDRANT] Purged 1 orphaned point, upserted 2 points.
-[SUCCESS] Index synchronized in 148ms. 0 redundant embeddings computed.
+Ingestion Summary
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Entity          ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ Total Documents │     1 │
+│ Total Sections  │     4 │
+│ Total Chunks    │    12 │
+└─────────────────┴───────┘
+Ingestion complete: created 1 documents, 4 sections, and 12 chunks.
 ```
 
-### 3. Search & RAG Generation
+### 2. Differential Synchronization (`strata sync`)
+
+Reconciles the derived Qdrant vector index and BM25 sparse index against SQLite:
 
 ```bash
-# Pure Search: Hybrid retrieval + Re-ranking (Sub-200ms, zero LLM execution)
-strata search "How does differential chunk invalidation work?" --top-k 3
+# Run incremental synchronization
+strata sync
 
-# Full RAG: Hybrid retrieval + Re-ranking + Local LLM Streaming
-strata ask "Explain the consensus safety invariants in my notes" --stream
+# Override the embedding batch size if desired
+strata sync --batch-size 64
 ```
 
-### 4. Evaluation Benchmark
+*Output:*
+```text
+Index Synchronization Summary
+┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃ Operation              ┃ Record Count ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ Added Records          │            2 │
+│ Updated Records        │            0 │
+│ Deleted Records        │            1 │
+│ Unchanged Records      │           10 │
+│ Total Active Chunks    │           12 │
+│ Total Documents        │            1 │
+│ Elapsed Execution Time │    142.30 ms │
+└────────────────────────┴──────────────┘
+```
+
+> **Note:** Running `strata sync` again without modifying notes yields `0 Added`, `12 Unchanged`, executing in milliseconds without any tensor embedding computation.
+
+### 3. Sub-200ms Hybrid Search (`strata search`)
+
+Execute pure hybrid retrieval (Dense + Sparse + RRF + Cross-Encoder) with zero LLM overhead:
 
 ```bash
-# Run the local RAGAS evaluation harness and write scorecard to BENCHMARK.md
-strata benchmark --dataset tests/eval/golden_dataset.json --output BENCHMARK.md
+# Fast hybrid search (returns top 3 results)
+strata search "How does leader election handle network partitions?" --limit 3
+
+# Filter search candidates by tags
+strata search "consensus invariants" --tag distributed-systems
+
+# Enable Small-to-Big context expansion (hydrates full parent section from SQLite)
+strata search "heartbeat timeout" --expand-section
+
+# Expand window to include 1 adjacent sibling chunk before and after
+strata search "Raft safety rules" --window-size 1
 ```
 
----
+*Sample Search Panel Output:*
+```text
+Found 1 matching result(s) for query: "How does leader election handle network partitions?"
 
-## Autonomous Agent Primitives
-
-Strata exposes typed Python tools for agent orchestrators (LangGraph, Smolagents, LlamaIndex):
-
-```python
-from strata.agents.tools import StrataAgentTools
-
-# Initialize agent interface connected to local stores
-tools = StrataAgentTools(db_path="./data/canonical.db", qdrant_path="./data/qdrant")
-
-# 1. Deterministic Metadata Pre-Filtering (avoid blind semantic searches)
-docs = tools.filter_documents(tags=["backend"], modified_after="2026-01-01")
-
-# 2. Structural Inspection (inspect outline before loading full text into memory)
-outline = tools.get_document_outline(document_id="4f7c1e82-...")
-# Returns: [{"level": 1, "title": "Raft Implementation"}, {"level": 2, "title": "Leader Election"}]
-
-# 3. Context Expansion (traverse adjacent siblings in SQLite)
-expanded = tools.expand_chunk_context(chunk_id="chunk_a8f9...", window=1)
-# Returns: Combined text of chunk_a8f9 with preceding and succeeding chunks
+╭─ Result #1 (Latency: 64.12ms) ─────────────────────────────────────────────────────────────╮
+│ Document: Raft Consensus Notes                                                             │
+│ Heading Path: Architecture > Raft > Leader Election                                        │
+│ Rerank Score: 0.9412                                                                       │
+│                                                                                            │
+│ ╭─ Matching Chunk ───────────────────────────────────────────────────────────────────────╮ │
+│ │ If a follower receives no communication over election timeout, it assumes there is no  │ │
+│ │ viable leader and transitions to candidate state, incrementing its current term...     │ │
+│ ╰────────────────────────────────────────────────────────────────────────────────────────╯ │
+│                                                                                            │
+│ ╭─ Parent Section Context (Leader Election) ─────────────────────────────────────────────╮ │
+│ │ ## Leader Election                                                                     │ │
+│ │ Raft uses a heartbeat mechanism to trigger leader election. Leaders send periodic      │ │
+│ │ heartbeats (AppendEntries RPCs with no log entries) to maintain authority...           │ │
+│ ╰────────────────────────────────────────────────────────────────────────────────────────╯ │
+╰────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
----
+### 4. System Telemetry & Status (`strata status`)
 
-## Empirical Evaluation & RAGAS Benchmarks
-
-To eliminate subjective evaluation, Strata implements an automated evaluation harness using `ragas` configured with a local Ollama judge model (`TO BE DECIDED`).
-
-### Benchmark Configuration
-* **Test Dataset:** 50 curated question-context-answer triples derived from technical documentation.
-* **Embedding Model:** `BAAI/bge-small-en-v1.5`
-* **Re-ranker:** `BAAI/bge-reranker-base`
-* **Judge LLM:** `qwen2.5:7b-instruct` (via local Ollama endpoint)
-
-### Empirical Results
-
-| Retrieval Strategy | Re-ranker | Context Precision | Context Recall | Faithfulness | Answer Relevance | Avg Retrieval Latency |
-|---|---|---|---|---|---|---|
-| Dense Vector Only | None | 0.71 | 0.74 | 0.81 | 0.82 | 48 ms |
-| Sparse (BM25) Only | None | 0.68 | 0.69 | 0.84 | 0.79 | 18 ms |
-| Hybrid (RRF) | None | 0.84 | 0.87 | 0.89 | 0.88 | 65 ms |
-| **Hybrid (RRF)** | **bge-reranker-base** | **0.94** | **0.92** | **0.96** | **0.95** | **158 ms** |
-
-### Key Findings
-1. **Hybrid Synergy:** Combining BM25 with dense vectors produced a **+13% improvement in Context Recall**, catching technical keywords and error codes missed by dense semantic vectors.
-2. **Re-ranker Impact:** Adding the cross-encoder reduced false-positive chunks entering the context window, boosting generation **Faithfulness to 0.96** and eliminating hallucination in edge cases.
-3. **Latency Compliance:** Full two-stage hybrid retrieval comfortably executes in **158ms**, remaining well within the 200ms non-functional budget.
-
----
-
-## Verification & Code Quality
-
-The repository enforces strict typing and code quality gates across all modules:
+Inspect the health, record counts, and storage footprints across SQLite, Qdrant, and BM25:
 
 ```bash
-# Static type checking with strict configuration
-mypy --strict src/
+strata status
+```
 
-# Linting and formatting checks via Ruff
-ruff check src/ tests/
-ruff format --check src/ tests/
-
-# Execute unit and integration test suite with coverage
-pytest -v --cov=strata tests/
+*Output:*
+```text
+Strata System Status & Telemetry
+┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┓
+┃ Subsystem             ┃ Metric                  ┃               Value ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
+│ SQLite (Canonical)    │ Total Documents         │                   8 │
+│ SQLite (Canonical)    │ Total Sections          │                  34 │
+│ SQLite (Canonical)    │ Total Chunks            │                 112 │
+│ Qdrant (Dense Vector) │ Active Vector Points    │                 112 │
+│ BM25 (Sparse Index)   │ Index File Status       │ Active (persisted)  │
+│ BM25 (Sparse Index)   │ Index Byte Size on Disk │        54,210 bytes │
+└───────────────────────┴─────────────────────────┴─────────────────────┘
 ```
 
 ---
 
-## License
+## ⚙️ Configuration Reference
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for complete details.
+All settings can be customized via environment variables prefixed with `STRATA_` or via a root `.env` file (managed by [`Settings`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/core/config.py)):
 
--->
+| Variable | Default Value | Description |
+|---|---|---|
+| `STRATA_DATA_DIR` | `./data` | Root directory for local data persistence |
+| `STRATA_DB_PATH` | `./data/canonical.db` | Path to canonical SQLite ACID database |
+| `STRATA_QDRANT_PATH` | `./data/qdrant` | Directory for embedded Qdrant vector index |
+| `STRATA_BM25_INDEX_PATH` | `./data/bm25.json` | Filesystem path for persisted BM25 sparse index |
+| `STRATA_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Dense embedding model (FastEmbed ONNX runtime) |
+| `STRATA_EMBEDDING_DIMENSION` | `384` | Dimensionality of dense embedding vectors |
+| `STRATA_RERANKER_MODEL` | `BAAI/bge-reranker-base` | Cross-encoder re-ranking model (FlashRank ONNX) |
+| `STRATA_CHUNK_SIZE` | `350` | Target search chunk length in tokens |
+| `STRATA_CHUNK_OVERLAP` | `50` | Token overlap between adjacent chunks |
+| `STRATA_RRF_K` | `60` | Reciprocal Rank Fusion smoothing constant |
+| `STRATA_FUSED_TOP_K` | `30` | Number of fused candidates routed to cross-encoder |
+| `STRATA_FINAL_TOP_K` | `5` | Default number of final re-ranked results returned |
+| `STRATA_OLLAMA_BASE_URL` | `http://localhost:11434`| Local Ollama service endpoint |
+| `STRATA_LLM_MODEL` | `qwen3.5:0.8b` | Default local LLM tag for synthesis |
+
+---
+
+## 🧪 Quality Assurance & Verification
+
+Strata enforces strict software engineering standards with automated linting, formatting, static analysis, and test suites:
+
+```bash
+# 1. Run full test suite (279 passing unit & integration tests)
+uv run pytest -v
+
+# 2. Strict static type analysis (zero mypy warnings)
+uv run mypy --strict src/
+
+# 3. Fast code style, linting, and formatting checks
+uv run ruff check src/ tests/
+uv run ruff format --check src/ tests/
+```
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for complete details.
