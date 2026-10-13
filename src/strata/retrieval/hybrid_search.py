@@ -23,6 +23,7 @@ from strata.core.protocols import (
     SparseIndex,
     VectorStore,
 )
+
 from .rrf import reciprocal_rank_fusion
 
 logger = logging.getLogger(__name__)

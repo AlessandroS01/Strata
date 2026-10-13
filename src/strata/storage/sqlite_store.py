@@ -343,6 +343,13 @@ class SQLiteStore(DocumentStore):
         rows = cursor.fetchall()
         return [self._row_to_section(row) for row in rows]
 
+    def count_sections(self) -> int:
+        """Return total count of stored sections."""
+        query = "SELECT COUNT(*) FROM sections"
+        cursor = self._conn.execute(query)
+        row = cursor.fetchone()
+        return int(row[0]) if row is not None else 0
+
     # -------------------------------------------------------------------------
     # Chunk Queries
     # -------------------------------------------------------------------------
