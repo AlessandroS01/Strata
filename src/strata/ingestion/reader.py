@@ -159,7 +159,7 @@ def _extract_metadata(frontmatter: dict[str, object]) -> dict[str, str]:
             val_str = json.dumps(v, ensure_ascii=False)
         else:
             val_str = str(v)
-        metadata[str(k)] = val_str
+        metadata[k] = val_str
     return metadata
 
 
