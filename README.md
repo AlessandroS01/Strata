@@ -138,7 +138,7 @@ flowchart TD
 #### 1. Ingestion & AST Parsing
 When running `strata ingest <path>`, the [`LocalFileReader`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/ingestion/reader.py) discovers Markdown files while ignoring hidden paths and vendor folders (`.git`, `.venv`, `node_modules`).
 * Delimited YAML frontmatter (`---`) is extracted into typed metadata and normalized tags.
-* If a document has no frontmatter title, title extraction falls back to the first Markdown `# H1` heading, and finally to the file stem.
+* If a document has no frontmatter title, title extraction falls back to the file stem, and finally to the first Markdown `# H1` heading.
 * A cryptographic SHA-256 hash is computed over the raw file content to track whole-document changes.
 
 #### 2. Hierarchical Small-to-Big Chunking
@@ -166,7 +166,7 @@ When querying with `strata search`, [`StrataHybridSearcher`](file:///c:/Users/se
    where $k = 60$ (smoothing constant) and $w_m$ are retrieval leg weights.
 
 #### 5. Cross-Encoder Re-Ranking & Context Hydration
-1. **FlashRank Cross-Attention:** The top 30 fused candidate chunks are passed to [`FlashRankReranker`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/retrieval/reranker.py) (`BAAI/bge-reranker-base`). The cross-encoder attends across query and passage tokens simultaneously, assigning definitive relevance scores and selecting the top $K$ winners.
+1. **FlashRank Cross-Attention:** The top 30 fused candidate chunks are passed to [`FlashRankReranker`](file:///c:/Users/seghi/Desktop/Projects/Strata/src/strata/retrieval/reranker.py) (`ms-marco-TinyBERT-L-2-v2`). The cross-encoder attends across query and passage tokens simultaneously, assigning definitive relevance scores and selecting the top $K$ winners.
 2. **Context Hydration:**
    - **Small-to-Big (`--expand-section`):** Pulls the full parent `Section` text from SQLite using `parent_section_id`, providing complete conceptual context without sentence truncation.
    - **Window Expansion (`--window-size N`):** Fetches the $N$ chronologically preceding and succeeding sibling chunks from SQLite for adjacent narrative continuity.
@@ -429,7 +429,7 @@ All settings can be customized via environment variables prefixed with `STRATA_`
 | `STRATA_BM25_INDEX_PATH` | `./data/bm25.json` | Filesystem path for persisted BM25 sparse index |
 | `STRATA_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Dense embedding model (FastEmbed ONNX runtime) |
 | `STRATA_EMBEDDING_DIMENSION` | `384` | Dimensionality of dense embedding vectors |
-| `STRATA_RERANKER_MODEL` | `BAAI/bge-reranker-base` | Cross-encoder re-ranking model (FlashRank ONNX) |
+| `STRATA_RERANKER_MODEL` | `ms-marco-TinyBERT-L-2-v2` | Cross-encoder re-ranking model (FlashRank ONNX) |
 | `STRATA_CHUNK_SIZE` | `350` | Target search chunk length in tokens |
 | `STRATA_CHUNK_OVERLAP` | `50` | Token overlap between adjacent chunks |
 | `STRATA_RRF_K` | `60` | Reciprocal Rank Fusion smoothing constant |

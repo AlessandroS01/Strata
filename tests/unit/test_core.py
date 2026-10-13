@@ -42,7 +42,7 @@ def test_settings_defaults() -> None:
     assert settings.qdrant_collection_name == "strata_chunks"
     assert settings.embedding_model == "BAAI/bge-small-en-v1.5"
     assert settings.embedding_dimension == 384
-    assert settings.reranker_model == "BAAI/bge-reranker-base"
+    assert settings.reranker_model == "ms-marco-TinyBERT-L-2-v2"
     assert settings.chunk_size == 350
     assert settings.dense_top_k == 30
     assert settings.sparse_top_k == 30

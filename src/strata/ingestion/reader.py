@@ -99,7 +99,7 @@ def _parse_frontmatter_and_body(content: str, file_path: Path) -> tuple[dict[str
 
 
 def _extract_title(frontmatter: dict[str, object], body: str, file_path: Path) -> str:
-    """Extract document title with priority: frontmatter title -> H1 heading -> file stem."""
+    """Extract document title with priority: frontmatter title -> file stem -> H1 heading."""
     # 1. Frontmatter title (case-insensitive key check)
     for k, v in frontmatter.items():
         if k.lower() == "title" and v is not None:
@@ -107,13 +107,17 @@ def _extract_title(frontmatter: dict[str, object], body: str, file_path: Path) -
             if title_str:
                 return title_str
 
-    # 2. First Markdown # H1 heading in body
+    # 2. File stem (e.g. notes.md -> 'notes')
+    stem = file_path.stem.strip()
+    if stem:
+        return stem
+
+    # 3. First Markdown # H1 heading in body
     h1_title = _extract_first_h1(body)
     if h1_title:
         return h1_title
 
-    # 3. Fallback to file stem (e.g. notes.md -> 'notes')
-    return file_path.stem
+    return "Untitled"
 
 
 def _extract_tags(frontmatter: dict[str, object]) -> list[str]:

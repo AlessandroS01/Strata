@@ -115,7 +115,7 @@ class Settings(BaseSettings):
     # Cross-Encoder Re-ranking
     # -------------------------------------------------------------------------
     reranker_model: str = Field(
-        default="BAAI/bge-reranker-base",
+        default="ms-marco-TinyBERT-L-2-v2",
         description="Local cross-encoder re-ranking model.",
     )
     reranker_batch_size: int = Field(

@@ -11,6 +11,8 @@ from strata.core.models import Document
 from strata.core.protocols import DocumentReader
 from strata.ingestion.reader import (
     LocalFileReader,
+    _extract_first_h1,
+    _extract_title,
     read_file,
     scan_directory,
 )
@@ -104,8 +106,8 @@ def test_read_file_metadata_nested_structures(tmp_path: Path) -> None:
     assert json.loads(doc.metadata["reviewers"]) == ["Alice", "Bob"]
 
 
-def test_read_file_title_fallback_to_h1(tmp_path: Path) -> None:
-    """Verify title falls back to first # H1 heading when frontmatter has no title."""
+def test_read_file_title_priority_file_stem_over_h1(tmp_path: Path) -> None:
+    """Verify title prefers file stem over # H1 heading when frontmatter has no title."""
     content = (
         "---\n"
         "tags: [notes]\n"
@@ -120,22 +122,25 @@ def test_read_file_title_fallback_to_h1(tmp_path: Path) -> None:
     file_path.write_text(content, encoding="utf-8")
 
     doc = read_file(file_path)
-    assert doc.title == "Heading From Markdown Body"
+    assert doc.title == "notes"
     assert doc.tags == ["notes"]
     assert doc.metadata == {"author": "Alessandro"}
 
 
-def test_read_file_title_fallback_to_h1_with_trailing_hashes(tmp_path: Path) -> None:
-    """Verify # H1 heading with trailing hashes is parsed cleanly."""
-    content = "# Closed Heading #\n\nBody content."
-    file_path = tmp_path / "closed.md"
-    file_path.write_text(content, encoding="utf-8")
-
-    doc = read_file(file_path)
-    assert doc.title == "Closed Heading"
+def test_extract_title_fallback_to_h1_when_stem_empty() -> None:
+    """Verify title falls back to first # H1 heading when frontmatter has no title and stem is empty."""
+    body = "# Heading From Markdown Body\n\nSome details."
+    assert _extract_title({}, body, Path("")) == "Heading From Markdown Body"
 
 
-def test_read_file_title_ignores_h1_inside_code_fence(tmp_path: Path) -> None:
+def test_extract_title_h1_with_trailing_hashes() -> None:
+    """Verify # H1 heading with trailing hashes is parsed cleanly when falling back to H1."""
+    body = "# Closed Heading #\n\nBody content."
+    assert _extract_title({}, body, Path("")) == "Closed Heading"
+    assert _extract_first_h1(body) == "Closed Heading"
+
+
+def test_extract_title_ignores_h1_inside_code_fence() -> None:
     """Verify # comments inside fenced code blocks are not treated as document H1 titles."""
     content = (
         "```python\n"
@@ -147,15 +152,18 @@ def test_read_file_title_ignores_h1_inside_code_fence(tmp_path: Path) -> None:
         "\n"
         "More content."
     )
-    file_path = tmp_path / "script_doc.md"
-    file_path.write_text(content, encoding="utf-8")
-
-    doc = read_file(file_path)
-    assert doc.title == "Legitimate Document Title"
+    assert _extract_title({}, content, Path("")) == "Legitimate Document Title"
+    assert _extract_first_h1(content) == "Legitimate Document Title"
 
 
-def test_read_file_title_fallback_to_file_stem(tmp_path: Path) -> None:
-    """Verify title falls back to filename stem when neither frontmatter nor H1 exists."""
+def test_extract_title_fallback_to_untitled() -> None:
+    """Verify title falls back to 'Untitled' when neither frontmatter, stem, nor H1 exists."""
+    content = "## Subheading Only\n\nParagraph text without any level 1 heading.\n"
+    assert _extract_title({}, content, Path("")) == "Untitled"
+
+
+def test_read_file_title_uses_file_stem(tmp_path: Path) -> None:
+    """Verify title uses filename stem when frontmatter has no title."""
     content = "## Subheading Only\n\nParagraph text without any level 1 heading.\n"
     file_path = tmp_path / "system_architecture.markdown"
     file_path.write_text(content, encoding="utf-8")
@@ -214,8 +222,8 @@ def test_read_file_malformed_yaml_frontmatter_handled_gracefully(
     # Must not crash
     doc = read_file(file_path)
 
-    # Title recovered from # H1 heading in plain markdown body
-    assert doc.title == "Recovered Title"
+    # Title defaults to file stem since frontmatter failed to parse and file stem precedes H1
+    assert doc.title == "broken_fm"
     assert doc.tags == []
     assert doc.metadata == {}
     assert "# Recovered Title" in doc.raw_content
@@ -233,7 +241,7 @@ def test_read_file_non_dict_yaml_frontmatter_handled_gracefully(
     file_path.write_text(content, encoding="utf-8")
 
     doc = read_file(file_path)
-    assert doc.title == "List FM Doc"
+    assert doc.title == "list_fm"
     assert doc.tags == []
     assert doc.metadata == {}
     assert any("is not a dictionary" in record.message for record in caplog.records)
@@ -248,7 +256,7 @@ def test_read_file_unclosed_frontmatter_treated_as_plain_markdown(
     file_path.write_text(content, encoding="utf-8")
 
     doc = read_file(file_path)
-    assert doc.title == "Unclosed Doc"
+    assert doc.title == "unclosed"
     assert doc.tags == []
     assert doc.metadata == {}
     assert "This is not valid frontmatter" in doc.raw_content
@@ -342,13 +350,13 @@ def test_scan_directory_recursive_and_flat(tmp_path: Path) -> None:
     flat_docs = scan_directory(tmp_path, recursive=False)
     assert len(flat_docs) == 2
     flat_titles = {d.title for d in flat_docs}
-    assert flat_titles == {"Doc 1", "Doc 2"}
+    assert flat_titles == {"doc1", "doc2"}
 
     # Recursive scan (recursive=True)
     rec_docs = scan_directory(tmp_path, recursive=True)
     assert len(rec_docs) == 4
     rec_titles = {d.title for d in rec_docs}
-    assert rec_titles == {"Doc 1", "Doc 2", "Doc 3", "Doc 4"}
+    assert rec_titles == {"doc1", "doc2", "doc3", "doc4"}
 
 
 def test_scan_directory_skips_hidden_and_vendor_directories(
@@ -376,7 +384,7 @@ def test_scan_directory_skips_hidden_and_vendor_directories(
 
     docs = scan_directory(tmp_path, recursive=True)
     assert len(docs) == 1
-    assert docs[0].title == "Valid Note"
+    assert docs[0].title == "valid"
 
 
 def test_scan_directory_gracefully_skips_corrupted_files(
@@ -388,7 +396,7 @@ def test_scan_directory_gracefully_skips_corrupted_files(
 
     docs = scan_directory(tmp_path, recursive=True)
     assert len(docs) == 1
-    assert docs[0].title == "Good Note"
+    assert docs[0].title == "good"
     assert any("Skipping unreadable file" in record.message for record in caplog.records)
 
 
@@ -425,4 +433,4 @@ def test_custom_reader_configuration(tmp_path: Path) -> None:
     )
     docs = custom_reader.scan_directory(tmp_path, recursive=True)
     assert len(docs) == 1
-    assert docs[0].title == "Text Note"
+    assert docs[0].title == "note"
