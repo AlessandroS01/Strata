@@ -120,7 +120,7 @@ class MarkdownChunker(Chunker):
         # Boundary condition: Document without headings (fallback to document title)
         if not parsed_headings:
             content = raw_content.strip()
-            sec_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"{document.id}:section:0").hex
+            sec_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"{document.id}:{document.title}").hex
             return [
                 Section(
                     id=sec_id,
@@ -136,6 +136,7 @@ class MarkdownChunker(Chunker):
 
         sections: list[Section] = []
         section_index = 0
+        seen_paths: dict[str, int] = {}
 
         # Check for preamble content before the first heading
         first_heading_line_idx = parsed_headings[0][0]
@@ -143,9 +144,15 @@ class MarkdownChunker(Chunker):
             preamble_lines = lines[:first_heading_line_idx]
             preamble_content = "\n".join(preamble_lines).strip()
             if preamble_content:
-                sec_id = uuid.uuid5(
-                    uuid.NAMESPACE_DNS, f"{document.id}:section:{section_index}"
-                ).hex
+                preamble_path = document.title
+                sec_count = seen_paths.get(preamble_path, 0)
+                seen_paths[preamble_path] = sec_count + 1
+                seed = (
+                    f"{document.id}:{preamble_path}"
+                    if sec_count == 0
+                    else f"{document.id}:{preamble_path}:{sec_count}"
+                )
+                sec_id = uuid.uuid5(uuid.NAMESPACE_DNS, seed).hex
                 sections.append(
                     Section(
                         id=sec_id,
@@ -177,7 +184,14 @@ class MarkdownChunker(Chunker):
             heading_stack.append((level, title))
             heading_path = " > ".join(t for _, t in heading_stack)
 
-            sec_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"{document.id}:section:{section_index}").hex
+            sec_count = seen_paths.get(heading_path, 0)
+            seen_paths[heading_path] = sec_count + 1
+            seed = (
+                f"{document.id}:{heading_path}"
+                if sec_count == 0
+                else f"{document.id}:{heading_path}:{sec_count}"
+            )
+            sec_id = uuid.uuid5(uuid.NAMESPACE_DNS, seed).hex
             sections.append(
                 Section(
                     id=sec_id,
@@ -207,6 +221,7 @@ class MarkdownChunker(Chunker):
         sections = self.extract_sections(document)
         chunks: list[Chunk] = []
         chunk_index = 0
+        seen_hashes: dict[str, int] = {}
 
         for section in sections:
             content = section.content.strip()
@@ -218,6 +233,7 @@ class MarkdownChunker(Chunker):
                 section=section,
                 text=content,
                 start_index=chunk_index,
+                seen_hashes=seen_hashes,
             )
             chunks.extend(section_chunks)
             chunk_index += len(section_chunks)
@@ -230,6 +246,7 @@ class MarkdownChunker(Chunker):
         section: Section,
         text: str,
         start_index: int,
+        seen_hashes: dict[str, int] | None = None,
     ) -> list[Chunk]:
         """Subdivide a single section body into one or more granular search chunks."""
         tokens = self._encode_text(text)
@@ -239,10 +256,21 @@ class MarkdownChunker(Chunker):
         if total_tokens < self.min_chunk_size:
             return []
 
+        def get_chunk_id(c_hash: str) -> str:
+            if seen_hashes is not None:
+                count = seen_hashes.get(c_hash, 0)
+                seen_hashes[c_hash] = count + 1
+                seed = (
+                    f"{document.id}:{c_hash}" if count == 0 else f"{document.id}:{c_hash}:{count}"
+                )
+            else:
+                seed = f"{document.id}:{c_hash}"
+            return uuid.uuid5(uuid.NAMESPACE_DNS, seed).hex
+
         # Retain short section as a single chunk if it meets min_chunk_size and fits in chunk_size
         if total_tokens <= self.chunk_size:
             chunk_hash = compute_chunk_hash(section.heading_path, text)
-            chunk_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"{document.id}:chunk:{start_index}").hex
+            chunk_id = get_chunk_id(chunk_hash)
             return [
                 Chunk(
                     id=chunk_id,
@@ -275,9 +303,7 @@ class MarkdownChunker(Chunker):
                     chunk_text = self._decode_tokens(chunk_tokens).strip()
                     if chunks and chunk_text != chunks[-1].text:
                         chunk_hash = compute_chunk_hash(section.heading_path, chunk_text)
-                        chunk_id = uuid.uuid5(
-                            uuid.NAMESPACE_DNS, f"{document.id}:chunk:{current_idx}"
-                        ).hex
+                        chunk_id = get_chunk_id(chunk_hash)
                         chunks.append(
                             Chunk(
                                 id=chunk_id,
@@ -296,7 +322,7 @@ class MarkdownChunker(Chunker):
             chunk_text = self._decode_tokens(chunk_tokens).strip()
             if chunk_text:
                 chunk_hash = compute_chunk_hash(section.heading_path, chunk_text)
-                chunk_id = uuid.uuid5(uuid.NAMESPACE_DNS, f"{document.id}:chunk:{current_idx}").hex
+                chunk_id = get_chunk_id(chunk_hash)
                 chunks.append(
                     Chunk(
                         id=chunk_id,

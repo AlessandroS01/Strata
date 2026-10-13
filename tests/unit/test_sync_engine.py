@@ -11,6 +11,8 @@ from strata.core.models import Chunk, Document, DocumentOutline, RetrievedChunk,
 from strata.core.protocols import DocumentStore, Embedder, SparseIndex, VectorStore
 from strata.indexing.bm25_index import BM25Index
 from strata.indexing.sync_engine import IndexSyncEngine
+from strata.ingestion.chunker import MarkdownChunker
+from strata.ingestion.reader import LocalFileReader
 from strata.storage.sqlite_store import SQLiteStore
 
 
@@ -576,3 +578,168 @@ class TestIndexSyncEngine:
             report2 = engine.sync()
             assert report2.new_chunks == 0
             assert report2.unchanged_chunks == 2
+
+    def test_reingest_updated_document_preserves_unchanged_chunks(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Regression test: re-ingesting an updated file must only re-index new/modified chunks."""
+        db_path = tmp_path / "regression_canonical.db"
+        bm25_path = tmp_path / "regression_bm25.json"
+        sqlite_store = SQLiteStore(db_path=db_path)
+        vec_store = MockVectorStore()
+        sparse_idx = BM25Index(settings=Settings(bm25_index_path=bm25_path))
+        embedder = MockEmbedder()
+        engine = IndexSyncEngine(
+            sqlite_store=sqlite_store,
+            vector_store=vec_store,
+            sparse_index=sparse_idx,
+            embedder=embedder,
+            settings=Settings(bm25_index_path=bm25_path),
+        )
+
+        reader = LocalFileReader()
+        chunker = MarkdownChunker(min_chunk_size=5)
+
+        # 1. Initial document with 3 distinct sections
+        doc_path = tmp_path / "README.md"
+        doc_path.write_text(
+            "# Project Overview\n"
+            "Strata is an offline air-gapped personal knowledge base engine.\n\n"
+            "## Storage Engine\n"
+            "SQLite serves as the canonical ACID relational store for raw text and chunks.\n\n"
+            "## Vector Index\n"
+            "Qdrant provides dense vector search for semantic ANN retrieval.\n",
+            encoding="utf-8",
+        )
+
+        # Ingest initial version into SQLite
+        doc = reader.read_file(doc_path)
+        sections = chunker.extract_sections(doc)
+        chunks = chunker.chunk_document(doc)
+        assert len(chunks) == 3
+
+        sqlite_store.add_document(doc)
+        sqlite_store.add_sections(sections)
+        sqlite_store.add_chunks(chunks)
+
+        # Initial sync: all 3 chunks embedded and indexed
+        report1 = engine.sync()
+        assert report1.total_documents == 1
+        assert report1.total_chunks == 3
+        assert report1.new_chunks == 3
+        assert report1.unchanged_chunks == 0
+        assert report1.orphaned_chunks == 0
+        assert embedder.total_texts_embedded == 3
+        assert vec_store.count() == 3
+        assert sparse_idx.count == 3
+
+        # 2. Append a 4th section (the exact problem statement scenario)
+        doc_path.write_text(
+            "# Project Overview\n"
+            "Strata is an offline air-gapped personal knowledge base engine.\n\n"
+            "## Storage Engine\n"
+            "SQLite serves as the canonical ACID relational store for raw text and chunks.\n\n"
+            "## Vector Index\n"
+            "Qdrant provides dense vector search for semantic ANN retrieval.\n\n"
+            "## Cache Layer\n"
+            "In-memory caching accelerates recurring query resolution without inference.\n",
+            encoding="utf-8",
+        )
+
+        # Re-ingest updated file (mimics strata add / ingest)
+        updated_doc = reader.read_file(doc_path)
+        new_sections = chunker.extract_sections(updated_doc)
+        new_chunks = chunker.chunk_document(updated_doc)
+        assert len(new_chunks) == 4
+
+        # Reconcile in SQLite as done in main.py
+        existing = sqlite_store.get_document_by_path(updated_doc.file_path)
+        assert existing is not None
+        sqlite_store.delete_document(existing.id)
+        sqlite_store.add_document(updated_doc)
+        sqlite_store.add_sections(new_sections)
+        sqlite_store.add_chunks(new_chunks)
+
+        # Sync after append: should detect 3 unchanged chunks and 1 added chunk
+        report2 = engine.sync()
+        assert report2.total_documents == 1
+        assert report2.total_chunks == 4
+        assert report2.new_chunks == 1
+        assert report2.unchanged_chunks == 3
+        assert report2.orphaned_chunks == 0
+        # Critical assertion: total embedded texts must only increase by 1 (no re-embedding of existing 3)
+        assert embedder.total_texts_embedded == 4
+        assert vec_store.count() == 4
+        assert sparse_idx.count == 4
+
+        # 3. Insert a section at the beginning (shifts heading indices)
+        doc_path.write_text(
+            "# Introduction\n"
+            "Welcome to Strata, an air-gapped hybrid retrieval engine.\n\n"
+            "# Project Overview\n"
+            "Strata is an offline air-gapped personal knowledge base engine.\n\n"
+            "## Storage Engine\n"
+            "SQLite serves as the canonical ACID relational store for raw text and chunks.\n\n"
+            "## Vector Index\n"
+            "Qdrant provides dense vector search for semantic ANN retrieval.\n\n"
+            "## Cache Layer\n"
+            "In-memory caching accelerates recurring query resolution without inference.\n",
+            encoding="utf-8",
+        )
+
+        updated_doc2 = reader.read_file(doc_path)
+        new_sections2 = chunker.extract_sections(updated_doc2)
+        new_chunks2 = chunker.chunk_document(updated_doc2)
+        assert len(new_chunks2) == 5
+
+        existing2 = sqlite_store.get_document_by_path(updated_doc2.file_path)
+        assert existing2 is not None
+        sqlite_store.delete_document(existing2.id)
+        sqlite_store.add_document(updated_doc2)
+        sqlite_store.add_sections(new_sections2)
+        sqlite_store.add_chunks(new_chunks2)
+
+        # Sync after prepend: unchanged chunks preserve identity despite index shift
+        report3 = engine.sync()
+        assert report3.total_documents == 1
+        assert report3.total_chunks == 5
+        assert report3.new_chunks == 1
+        assert report3.unchanged_chunks == 4
+        assert report3.orphaned_chunks == 0
+        assert embedder.total_texts_embedded == 5
+
+        # 4. Modify an existing section in the middle
+        doc_path.write_text(
+            "# Introduction\n"
+            "Welcome to Strata, an air-gapped hybrid retrieval engine.\n\n"
+            "# Project Overview\n"
+            "Strata is an offline air-gapped personal knowledge base engine.\n\n"
+            "## Storage Engine\n"
+            "SQLite is enhanced with WAL mode for concurrent ACID operations.\n\n"
+            "## Vector Index\n"
+            "Qdrant provides dense vector search for semantic ANN retrieval.\n\n"
+            "## Cache Layer\n"
+            "In-memory caching accelerates recurring query resolution without inference.\n",
+            encoding="utf-8",
+        )
+
+        updated_doc3 = reader.read_file(doc_path)
+        new_sections3 = chunker.extract_sections(updated_doc3)
+        new_chunks3 = chunker.chunk_document(updated_doc3)
+
+        existing3 = sqlite_store.get_document_by_path(updated_doc3.file_path)
+        assert existing3 is not None
+        sqlite_store.delete_document(existing3.id)
+        sqlite_store.add_document(updated_doc3)
+        sqlite_store.add_sections(new_sections3)
+        sqlite_store.add_chunks(new_chunks3)
+
+        # Sync after edit: 1 modified chunk (1 new + 1 orphaned), 4 unchanged
+        report4 = engine.sync()
+        assert report4.total_documents == 1
+        assert report4.total_chunks == 5
+        assert report4.new_chunks == 1
+        assert report4.orphaned_chunks == 1
+        assert report4.unchanged_chunks == 4
+        assert embedder.total_texts_embedded == 6

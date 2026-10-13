@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import uuid
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -208,7 +209,10 @@ class LocalFileReader(DocumentReader):
         tags = _extract_tags(frontmatter)
         metadata = _extract_metadata(frontmatter)
 
+        doc_id = uuid.uuid5(uuid.NAMESPACE_DNS, str(path)).hex
+
         return Document(
+            id=doc_id,
             title=title,
             file_path=str(path),
             raw_content=raw_content,
