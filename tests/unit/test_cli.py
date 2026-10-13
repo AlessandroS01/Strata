@@ -136,18 +136,21 @@ def mock_dependencies(test_settings: Settings) -> Generator[MockCLIDependencies,
 def test_dependency_factory_wiring(test_settings: Settings) -> None:
     """Verify create_dependencies configures all storage and retrieval adapters."""
     deps = create_dependencies(test_settings)
-    assert isinstance(deps.sqlite_store, SQLiteStore)
-    assert isinstance(deps.vector_store, QdrantVectorStore)
-    assert isinstance(deps.sparse_index, BM25Index)
-    assert isinstance(deps.embedder, FastEmbedder)
-    assert isinstance(deps.reranker, FlashRankReranker)
-    assert isinstance(deps.searcher, StrataHybridSearcher)
-    assert isinstance(deps.sync_engine, IndexSyncEngine)
-    assert isinstance(deps.chunker, MarkdownChunker)
-    assert isinstance(deps.reader, LocalFileReader)
+    try:
+        assert isinstance(deps.sqlite_store, SQLiteStore)
+        assert isinstance(deps.vector_store, QdrantVectorStore)
+        assert isinstance(deps.sparse_index, BM25Index)
+        assert isinstance(deps.embedder, FastEmbedder)
+        assert isinstance(deps.reranker, FlashRankReranker)
+        assert isinstance(deps.searcher, StrataHybridSearcher)
+        assert isinstance(deps.sync_engine, IndexSyncEngine)
+        assert isinstance(deps.chunker, MarkdownChunker)
+        assert isinstance(deps.reader, LocalFileReader)
 
-    # Verify alias property
-    assert deps.hybrid_searcher is deps.searcher
+        # Verify alias property
+        assert deps.hybrid_searcher is deps.searcher
+    finally:
+        deps.close()
 
 
 def test_dependency_override_and_reset(test_settings: Settings) -> None:
@@ -159,8 +162,11 @@ def test_dependency_override_and_reset(test_settings: Settings) -> None:
 
     reset_dependencies()
     fresh_deps = get_dependencies(test_settings)
-    assert fresh_deps is not mock_deps
-    assert isinstance(fresh_deps.sqlite_store, SQLiteStore)
+    try:
+        assert fresh_deps is not mock_deps
+        assert isinstance(fresh_deps.sqlite_store, SQLiteStore)
+    finally:
+        fresh_deps.close()
 
 
 # ==============================================================================

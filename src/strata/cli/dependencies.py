@@ -41,6 +41,24 @@ class CLIDependencies:
         """Alias property for searcher."""
         return self.searcher
 
+    def close(self) -> None:
+        """Close opened resources and storage connections."""
+        if hasattr(self.sqlite_store, "close"):
+            self.sqlite_store.close()
+        if hasattr(self.vector_store, "close"):
+            self.vector_store.close()
+
+    def __enter__(self) -> "CLIDependencies":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
+        self.close()
+
 
 _dependency_override: object | None = None
 
