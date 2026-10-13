@@ -403,6 +403,18 @@ Strata System Status & Telemetry
 └───────────────────────┴─────────────────────────┴─────────────────────┘
 ```
 
+### 5. Canonical Database Visualization
+
+To visualize the hierarchical structure of the canonical database, use the the following commands:
+
+```bash
+uv run --with datasette datasette data/canonical.db
+```
+
+Then open **[http://localhost:8001](http://localhost:8001)** in your browser.
+
+
+
 ---
 
 ## ⚙️ Configuration Reference
