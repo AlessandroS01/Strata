@@ -219,11 +219,18 @@ class StrataHybridSearcher(HybridSearcher):
                 logger.warning("Chunk id=%s not found in SQLite store; skipping", chunk_id)
                 continue
 
+            parent_document = self.sqlite_store.get_document(chunk.document_id)
+            if parent_document is None:
+                logger.warning("Parent document for chunk %s not found; skipping", chunk_id)
+                continue
+            
+
             candidate_chunks.append(
                 RetrievedChunk(
                     chunk=chunk,
                     score=fused_score,
                     rrf_score=fused_score,
+                    document_title=parent_document.title
                 )
             )
 
