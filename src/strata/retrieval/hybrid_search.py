@@ -23,11 +23,9 @@ from strata.core.protocols import (
     SparseIndex,
     VectorStore,
 )
-from strata.retrieval.rrf import reciprocal_rank_fusion
+from .rrf import reciprocal_rank_fusion
 
 logger = logging.getLogger(__name__)
-
-__all__ = ["SearchResult", "StrataHybridSearcher"]
 
 
 def _extract_rankings(raw_results: list[Any]) -> list[tuple[str, float]]:
