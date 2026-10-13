@@ -223,14 +223,13 @@ class StrataHybridSearcher(HybridSearcher):
             if parent_document is None:
                 logger.warning("Parent document for chunk %s not found; skipping", chunk_id)
                 continue
-            
 
             candidate_chunks.append(
                 RetrievedChunk(
                     chunk=chunk,
                     score=fused_score,
                     rrf_score=fused_score,
-                    document_title=parent_document.title
+                    document_title=parent_document.title,
                 )
             )
 
